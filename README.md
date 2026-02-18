@@ -2,19 +2,15 @@
 
 Routes Claude Code through APRO's LiteLLM gateway with automatic API key management via 1Password.
 
-## Setup
+## Install
 
 ### macOS / Linux
 
 ```bash
-git clone git@github.com:aproorg/claude-wrapper.git ~/code/apro/claude-wrapper
-
-mkdir -p ~/.local/bin
-ln -sf ~/code/apro/claude-wrapper/claude ~/.local/bin/claude
-
-# Add to your .bashrc / .zshrc if ~/.local/bin isn't already on PATH:
-export PATH="$HOME/.local/bin:$PATH"
+curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
 ```
+
+That's it. Next time you run `claude`, it will automatically use APRO's LiteLLM gateway.
 
 ### Windows
 
@@ -32,7 +28,14 @@ Add to your `settings.json`:
 {
   "claudeCode.environmentVariables": [
     { "name": "CLAUDE_CODE_SKIP_AUTH_LOGIN", "value": "1" }
-  ],
+  ]
+}
+```
+
+If using the process wrapper (see [Developer setup](#developer-setup)), also add:
+
+```json
+{
   "claudeCode.claudeProcessWrapper": "/Users/USER/.local/bin/claude"
 }
 ```
@@ -40,8 +43,7 @@ Add to your `settings.json`:
 ## Verify
 
 ```bash
-which claude          # Should show ~/.local/bin/claude
-CLAUDE_DEBUG=1 claude # Shows config being loaded
+CLAUDE_DEBUG=1 claude  # Shows config being loaded
 ```
 
 ## Prerequisites
@@ -62,19 +64,34 @@ CLAUDE_DEBUG=1 claude
 
 ---
 
+## Developer Setup
+
+If you want to work on the wrapper itself (or prefer the process wrapper over the env.sh bootstrap):
+
+```bash
+git clone git@github.com:aproorg/claude-wrapper.git ~/code/apro/claude-wrapper
+
+mkdir -p ~/.local/bin
+ln -sf ~/code/apro/claude-wrapper/claude ~/.local/bin/claude
+
+# Add to your .bashrc / .zshrc if ~/.local/bin isn't already on PATH:
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Verify: `which claude` should show `~/.local/bin/claude`.
+
+---
+
 ## Reference
 
 <details>
 <summary>How it works</summary>
 
-The wrapper at `~/.local/bin/claude` shadows the real Claude binary. When you run `claude`:
+**Install method (env.sh bootstrap):** The installer writes a thin bootstrap to `~/.config/claude/env.sh`, which Claude Code automatically sources on startup. It fetches the latest config from this repo, caches it for 5 minutes, and falls back to stale cache on network failure.
 
-1. Finds the real binary (via `which -a`, skipping itself)
-2. Fetches `claude-env.sh` from this repo (cached for 5 minutes at `~/.cache/claude/env-remote.sh`)
-3. Sources the config (sets `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, etc.)
-4. Launches the real Claude Code with your arguments
+**Developer method (process wrapper):** The symlink at `~/.local/bin/claude` shadows the real binary. When you run `claude`, it finds the real binary (via `which -a`), fetches and sources the config, then launches the real Claude Code with your arguments.
 
-On network failure, it falls back to the stale cache.
+Both methods set the same environment: `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, model defaults, and per-project API keys.
 
 </details>
 
@@ -104,19 +121,6 @@ Override project detection: `CLAUDE_PROJECT=my-project claude`
 | `CLAUDE_MODEL` | `claude-opus-4-6` | Override default model |
 | `CLAUDE_PROJECT` | (auto-detected) | Override project name |
 | `CLAUDE_DEBUG` | `0` | Enable debug output |
-
-</details>
-
-<details>
-<summary>Alternative: env.sh bootstrap</summary>
-
-If you prefer Claude Code's built-in env sourcing over the process wrapper:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
-```
-
-This writes a bootstrap to `~/.config/claude/env.sh` which Claude Code sources on startup.
 
 </details>
 
