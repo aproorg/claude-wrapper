@@ -108,7 +108,7 @@ Add to your VSCode `settings.json`:
   "claudeCode.environmentVariables": [
     { "name": "CLAUDE_CODE_SKIP_AUTH_LOGIN", "value": "1" }
   ],
-  "claudeCode.claudeProcessWrapper": "/Users/USER/bin/claude"
+  "claudeCode.claudeProcessWrapper": "/Users/USER/.local/bin/claude"
 }
 ```
 
