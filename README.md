@@ -55,9 +55,14 @@ This writes a thin bootstrap to `~/.config/claude/env.sh` which Claude Code auto
 
 ### PowerShell Wrapper
 
-1. **Create a directory** for the script (e.g., `C:\Users\YOU\bin`)
+The `claudestart.ps1` script is the Windows equivalent of the bash wrapper — it handles project detection, API key caching, and all the same environment setup.
 
-2. **Add the directory to your PATH:**
+1. **Clone the repo:**
+   ```powershell
+   git clone git@github.com:aproorg/claude-wrapper.git $env:USERPROFILE\code\apro\claude-wrapper
+   ```
+
+2. **Create a directory on your PATH** (e.g., `C:\Users\YOU\bin`):
    - Search for "environment" in Start and select **"Edit the system environment variables"**
    - Click **Environment Variables**
    - Select **Path** for your user, click **Edit**
@@ -68,29 +73,29 @@ This writes a thin bootstrap to `~/.config/claude/env.sh` which Claude Code auto
    Set-ExecutionPolicy RemoteSigned
    ```
 
-4. **Create `claudestart.ps1`** in that directory (save with BOM encoding):
-
+4. **Copy the wrapper to your PATH directory:**
    ```powershell
-   Write-Host "Starting Claude..."
-
-   $env:ANTHROPIC_BASE_URL = "https://litellm.ai.apro.is"
-   $env:ANTHROPIC_MODEL = "claude-opus-4-6"
-   $env:ANTHROPIC_SMALL_FAST_MODEL = "claude-haiku"
-   $env:CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "1"
-   $env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"
-   $env:ANTHROPIC_AUTH_TOKEN = "$(op --account aproorg.1password.eu read 'op://Employee/Litellm.ai.apro.is/APIKEY')"
-
-   claude
+   Copy-Item "$env:USERPROFILE\code\apro\claude-wrapper\claudestart.ps1" "C:\Users\YOU\bin\claudestart.ps1"
    ```
-
-   > **Important:** Edit the 1Password item path to match your vault item. Do not use Icelandic characters in the path.
 
 5. **Run from any PowerShell:**
    ```powershell
    claudestart
    ```
 
-### Windows env.sh (WSL)
+> **Note:** The 1Password item path must not contain Icelandic characters. If your vault item name differs from the default, set `$OP_Item` in the script or configure the field in 1Password to match.
+
+### Updating
+
+To get the latest version, pull the repo and re-copy:
+
+```powershell
+cd $env:USERPROFILE\code\apro\claude-wrapper
+git pull
+Copy-Item claudestart.ps1 "C:\Users\YOU\bin\claudestart.ps1"
+```
+
+### WSL
 
 If you use WSL, follow the [macOS / Linux](#macos--linux) instructions inside your WSL shell.
 
@@ -114,12 +119,13 @@ Add to your VSCode `settings.json`:
 
 ### Files
 
-| File | Purpose |
-|------|---------|
-| `claude` | Process wrapper. Symlink onto your PATH to shadow the real binary. Fetches and caches remote config, sets env vars, then `exec`s the real Claude binary. |
-| `claude-env.sh` | Remote configuration fetched and cached by the wrapper. Contains LiteLLM endpoint, model defaults, 1Password integration, and per-project API key management. |
-| `env.sh` | Alternative: thin bootstrap for `~/.config/claude/env.sh` (sourced by Claude Code on startup). |
-| `install.js` | Cross-platform installer for the env.sh approach (macOS, Linux, WSL, Windows). |
+| File | Platform | Purpose |
+|------|----------|---------|
+| `claude` | macOS/Linux | Process wrapper. Symlink onto your PATH to shadow the real binary. Fetches and caches remote config, sets env vars, then `exec`s the real Claude binary. |
+| `claudestart.ps1` | Windows | PowerShell wrapper. Same features as the bash wrapper — project detection, API key caching, debug mode. Copy to a directory on your PATH. |
+| `claude-env.sh` | macOS/Linux | Remote configuration fetched and cached by the bash wrapper. Contains LiteLLM endpoint, model defaults, 1Password integration, and per-project API key management. |
+| `env.sh` | macOS/Linux | Alternative: thin bootstrap for `~/.config/claude/env.sh` (sourced by Claude Code on startup). |
+| `install.js` | All | Cross-platform installer for the env.sh approach (macOS, Linux, WSL). |
 
 ### Architecture (Process Wrapper)
 
@@ -156,6 +162,8 @@ The wrapper auto-detects the current project from the git remote (or directory n
 
 ## Commands
 
+**macOS / Linux:**
+
 ```bash
 # Force refresh cached config
 rm ~/.cache/claude/env-remote.sh
@@ -165,6 +173,19 @@ source ~/.config/claude/env.sh --clear-cache
 
 # Debug mode
 CLAUDE_DEBUG=1 claude
+```
+
+**Windows (PowerShell):**
+
+```powershell
+# Force refresh cached config
+Remove-Item "$env:LOCALAPPDATA\claude\env-remote.ps1"
+
+# Clear all caches (config + API keys)
+claudestart --clear-cache
+
+# Debug mode
+$env:CLAUDE_DEBUG = "1"; claudestart
 ```
 
 ## APRO Plugin Marketplace
