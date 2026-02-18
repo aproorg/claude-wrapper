@@ -40,20 +40,31 @@ if ($args -contains "--clear-cache") {
 # ============================================================================
 # Project Detection
 # ============================================================================
+function Sanitize-Name {
+    param([string]$Name)
+    # Strip anything except alphanumeric, hyphen, underscore, dot
+    return ($Name -replace '[^a-zA-Z0-9_.\-]', '')
+}
+
 function Get-ClaudeProject {
-    if ($env:CLAUDE_PROJECT) { return $env:CLAUDE_PROJECT }
+    $raw = ""
 
-    # Try git remote name
-    try {
-        $remote = git remote get-url origin 2>$null
-        if ($remote) {
-            $project = ($remote -split "/" | Select-Object -Last 1) -replace "\.git$", ""
-            if ($project) { return $project }
-        }
-    } catch {}
+    if ($env:CLAUDE_PROJECT) {
+        $raw = $env:CLAUDE_PROJECT
+    } else {
+        # Try git remote name
+        try {
+            $remote = git remote get-url origin 2>$null
+            if ($remote) {
+                $raw = ($remote -split "/" | Select-Object -Last 1) -replace "\.git$", ""
+            }
+        } catch {}
 
-    # Fall back to current directory name
-    return (Split-Path -Leaf (Get-Location))
+        # Fall back to current directory name
+        if (-not $raw) { $raw = (Split-Path -Leaf (Get-Location)) }
+    }
+
+    return (Sanitize-Name $raw)
 }
 
 # ============================================================================

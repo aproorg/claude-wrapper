@@ -26,13 +26,11 @@ _claude_needs_update() {
 }
 
 _claude_fetch_env() {
-  mkdir -p "$_CLAUDE_CACHE_DIR"
-  chmod 700 "$_CLAUDE_CACHE_DIR"
+  (umask 077; mkdir -p "$_CLAUDE_CACHE_DIR")
 
   local tmp="$_CLAUDE_CACHE_FILE.tmp.$$"
-  if curl -fsSL --connect-timeout 3 --max-time 10 "$CLAUDE_ENV_REMOTE_URL" -o "$tmp" 2>/dev/null; then
+  if (umask 077; curl -fsSL --connect-timeout 3 --max-time 10 "$CLAUDE_ENV_REMOTE_URL" -o "$tmp") 2>/dev/null; then
     mv "$tmp" "$_CLAUDE_CACHE_FILE"
-    chmod 600 "$_CLAUDE_CACHE_FILE"
   else
     rm -f "$tmp"
     # No cached copy at all — hard fail

@@ -18,21 +18,23 @@ CLAUDE_MODEL_HAIKU="haiku"
 # ============================================================================
 # Project Detection
 # ============================================================================
+sanitize_name() {
+  # Strip anything except alphanumeric, hyphen, underscore, dot
+  echo "$1" | tr -cd 'a-zA-Z0-9_.-'
+}
+
 detect_project() {
+  local raw_name=""
+
   if [[ -n "${CLAUDE_PROJECT:-}" ]]; then
-    echo "$CLAUDE_PROJECT"
-    return
+    raw_name="$CLAUDE_PROJECT"
+  else
+    # Try git remote name, strip .git suffix
+    raw_name=$(git remote get-url origin 2>/dev/null | sed -E 's#.*/##; s#\.git$##' || true)
+    [[ -z "$raw_name" ]] && raw_name=$(basename "$PWD")
   fi
 
-  # Try git remote name, strip .git suffix
-  local git_project
-  git_project=$(git remote get-url origin 2>/dev/null | sed -E 's#.*/##; s#\.git$##' || true)
-  if [[ -n "$git_project" ]]; then
-    echo "$git_project"
-    return
-  fi
-
-  basename "$PWD"
+  sanitize_name "$raw_name"
 }
 
 # ============================================================================
@@ -44,8 +46,8 @@ get_api_key() {
   local cache_file="$cache_dir/${project}.key"
   local cache_ttl=43200 # 12 hours
 
-  mkdir -p "$cache_dir"
-  chmod 700 "$cache_dir"
+  # Create cache dir with restrictive permissions from the start
+  (umask 077; mkdir -p "$cache_dir")
 
   # Check cache
   if [[ -f "$cache_file" ]]; then
@@ -60,10 +62,6 @@ get_api_key() {
   local key=""
 
   # Try project-specific field first, then fall back to default
-  # 1Password item structure:
-  #   - API Key (default)
-  #   - backend-api (project field)
-  #   - customer-portal (project field)
   key=$(op --account "$OP_ACCOUNT" read "${OP_ITEM}/${project}" 2>/dev/null || true)
 
   # Fall back to default "API Key" field
@@ -80,9 +78,8 @@ get_api_key() {
     return 1
   fi
 
-  # Cache with restricted permissions
-  echo "$key" >"$cache_file"
-  chmod 600 "$cache_file"
+  # Write cache file with restrictive permissions atomically
+  (umask 077; echo "$key" >"$cache_file")
 
   echo "$key"
 }

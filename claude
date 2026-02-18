@@ -36,12 +36,10 @@ _needs_update() {
 }
 
 if _needs_update; then
-  mkdir -p "$_CACHE_DIR"
-  chmod 700 "$_CACHE_DIR"
+  (umask 077; mkdir -p "$_CACHE_DIR")
   tmp="$_CACHE_FILE.tmp.$$"
-  if curl -fsSL --connect-timeout 3 --max-time 10 "$CLAUDE_ENV_REMOTE_URL" -o "$tmp" 2>/dev/null; then
+  if (umask 077; curl -fsSL --connect-timeout 3 --max-time 10 "$CLAUDE_ENV_REMOTE_URL" -o "$tmp") 2>/dev/null; then
     mv "$tmp" "$_CACHE_FILE"
-    chmod 600 "$_CACHE_FILE"
   else
     rm -f "$tmp"
     if [[ ! -f "$_CACHE_FILE" ]]; then
