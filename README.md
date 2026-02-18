@@ -5,26 +5,41 @@ Claude Code environment wrapper for APRO. Configures Claude Code to use LiteLLM 
 ## Quick Install
 
 ```bash
+# Clone the repo
+git clone git@github.com:aproorg/claude-wrapper.git ~/code/apro/claude-wrapper
+
+# Symlink the wrapper onto your PATH
+mkdir -p ~/bin
+ln -sf ~/code/apro/claude-wrapper/claude ~/bin/claude
+
+# Ensure ~/bin is on PATH (add to .bashrc/.zshrc if not already)
+export PATH="$HOME/bin:$PATH"
+```
+
+Or use the installer for the `env.sh` approach:
+```bash
 curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
 ```
 
 ## What It Does
 
-1. **`env.sh`** — Thin bootstrap installed at `~/.config/claude/env.sh`. Claude Code sources this automatically on every invocation. It fetches and caches the remote configuration.
+**`claude`** — Process wrapper. Symlink this to `~/bin/claude` to shadow the real binary. It fetches and caches the remote config, sets up environment variables, then `exec`s the real Claude binary. This is the recommended approach.
 
-2. **`claude-env.sh`** — Remote configuration fetched by the bootstrap. Contains LiteLLM endpoint, model defaults, 1Password integration, and per-project API key management.
+**`claude-env.sh`** — Remote configuration fetched and cached by the wrapper. Contains LiteLLM endpoint, model defaults, 1Password integration, and per-project API key management.
 
-3. **`install.js`** — Cross-platform installer (macOS, Linux, WSL, Windows). Writes the bootstrap and pre-caches the remote config.
+**`env.sh`** — Alternative: thin bootstrap for `~/.config/claude/env.sh` (sourced by Claude Code on startup). Use this if you prefer the env.sh approach over the process wrapper.
+
+**`install.js`** — Cross-platform installer for the env.sh approach (macOS, Linux, WSL, Windows).
 
 ## Architecture
 
 ```
-Claude Code start
-  → sources ~/.config/claude/env.sh  (thin bootstrap)
-    → fetches claude-env.sh from GitHub (5-min cache TTL)
-    → caches at ~/.cache/claude/env-remote.sh
-    → falls back to stale cache on network failure
-    → exports ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, etc.
+~/bin/claude  (process wrapper, shadows real binary)
+  → fetches claude-env.sh from GitHub (5-min cache TTL)
+  → caches at ~/.cache/claude/env-remote.sh
+  → falls back to stale cache on network failure
+  → sources config (exports ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN, etc.)
+  → exec /opt/homebrew/bin/claude "$@"
 ```
 
 ## Configuration

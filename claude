@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# claude — Process wrapper for Claude Code
+# Fetches remote config, sets up environment, and launches the real binary.
+#
+# Install:  ln -sf /path/to/claude-wrapper/claude ~/bin/claude
+# Update:   rm ~/.cache/claude/env-remote.sh
+# Debug:    CLAUDE_DEBUG=1 claude
+
+set -euo pipefail
+
+# ── Real binary ──────────────────────────────────────────────────────────────
+# Find the actual claude binary, skipping this wrapper
+CLAUDE_BIN=""
+while IFS= read -r candidate; do
+  [[ "$(readlink -f "$candidate" 2>/dev/null || echo "$candidate")" == "$(readlink -f "$0" 2>/dev/null || echo "$0")" ]] && continue
+  CLAUDE_BIN="$candidate"
+  break
+done < <(which -a claude 2>/dev/null)
+
+if [[ -z "$CLAUDE_BIN" ]]; then
+  echo "ERROR: Cannot find the real claude binary" >&2
+  exit 1
+fi
+
+# ── Remote config fetch + cache ──────────────────────────────────────────────
+CLAUDE_ENV_REMOTE_URL="${CLAUDE_ENV_URL:-https://raw.githubusercontent.com/aproorg/claude-wrapper/main/claude-env.sh}"
+_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/claude"
+_CACHE_FILE="$_CACHE_DIR/env-remote.sh"
+_UPDATE_TTL="${CLAUDE_ENV_UPDATE_TTL:-300}"
+
+_needs_update() {
+  [[ ! -f "$_CACHE_FILE" ]] && return 0
+  local age
+  age=$(($(date +%s) - $(stat -f %m "$_CACHE_FILE" 2>/dev/null || stat -c %Y "$_CACHE_FILE" 2>/dev/null || echo 0)))
+  [[ $age -ge $_UPDATE_TTL ]]
+}
+
+if _needs_update; then
+  mkdir -p "$_CACHE_DIR"
+  chmod 700 "$_CACHE_DIR"
+  tmp="$_CACHE_FILE.tmp.$$"
+  if curl -fsSL --connect-timeout 3 --max-time 10 "$CLAUDE_ENV_REMOTE_URL" -o "$tmp" 2>/dev/null; then
+    mv "$tmp" "$_CACHE_FILE"
+    chmod 600 "$_CACHE_FILE"
+  else
+    rm -f "$tmp"
+    if [[ ! -f "$_CACHE_FILE" ]]; then
+      echo "ERROR: Cannot fetch config from $CLAUDE_ENV_REMOTE_URL (no cache)" >&2
+      exit 1
+    fi
+  fi
+fi
+
+# ── Source remote config (sets ANTHROPIC_* exports) ──────────────────────────
+# shellcheck disable=SC1090
+source "$_CACHE_FILE"
+
+# ── Launch ───────────────────────────────────────────────────────────────────
+exec "$CLAUDE_BIN" "$@"
