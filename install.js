@@ -67,6 +67,7 @@ function detectPlatform() {
 // Helpers
 // ============================================================================
 function commandExists(cmd) {
+  if (!/^[a-zA-Z0-9_.-]+$/.test(cmd)) return false;
   try {
     const check =
       process.platform === "win32" ? `where ${cmd}` : `command -v ${cmd}`;
@@ -77,8 +78,9 @@ function commandExists(cmd) {
   }
 }
 
-function fetch(url) {
+function fetch(url, redirectsLeft = 5) {
   return new Promise((resolve, reject) => {
+    if (redirectsLeft <= 0) return reject(new Error("Too many redirects"));
     const get = url.startsWith("https") ? https.get : require("http").get;
     get(url, { timeout: 10_000 }, (res) => {
       if (
@@ -86,7 +88,10 @@ function fetch(url) {
         res.statusCode < 400 &&
         res.headers.location
       ) {
-        return fetch(res.headers.location).then(resolve, reject);
+        return fetch(res.headers.location, redirectsLeft - 1).then(
+          resolve,
+          reject,
+        );
       }
       if (res.statusCode !== 200) {
         return reject(new Error(`HTTP ${res.statusCode}`));
@@ -176,77 +181,16 @@ function ensureOnPath(binDir) {
 }
 
 // ============================================================================
-// Process wrapper script
+// Download and patch the process wrapper script
 // ============================================================================
-function wrapperScript(remoteUrl) {
-  return [
-    "#!/usr/bin/env bash",
-    "# claude — Process wrapper for Claude Code",
-    "# Fetches remote config, sets up environment, and launches the real binary.",
-    "#",
-    "# Installed by: curl -fsSL .../install.js | node",
-    "# Update:       rm ~/.cache/claude/env-remote.sh",
-    "# Debug:        CLAUDE_DEBUG=1 claude",
-    "",
-    "set -euo pipefail",
-    "",
-    "# ── Real binary ──────────────────────────────────────────────────────────────",
-    "# Find the actual claude binary, skipping this wrapper",
-    'CLAUDE_BIN=""',
-    "while IFS= read -r candidate; do",
-    '  [[ "$(readlink -f "$candidate" 2>/dev/null || echo "$candidate")" == "$(readlink -f "$0" 2>/dev/null || echo "$0")" ]] && continue',
-    '  CLAUDE_BIN="$candidate"',
-    "  break",
-    "done < <(which -a claude 2>/dev/null)",
-    "",
-    'if [[ -z "$CLAUDE_BIN" ]]; then',
-    '  echo "ERROR: Cannot find the real claude binary" >&2',
-    "  exit 1",
-    "fi",
-    "",
-    "# ── Remote config fetch + cache ──────────────────────────────────────────────",
-    'CLAUDE_ENV_REMOTE_URL="${CLAUDE_ENV_URL:-' + remoteUrl + '}"',
-    '_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/claude"',
-    '_CACHE_FILE="$_CACHE_DIR/env-remote.sh"',
-    '_UPDATE_TTL="${CLAUDE_ENV_UPDATE_TTL:-300}"',
-    "",
-    "_needs_update() {",
-    '  [[ ! -f "$_CACHE_FILE" ]] && return 0',
-    "  local age",
-    '  age=$(($(date +%s) - $(stat -f %m "$_CACHE_FILE" 2>/dev/null || stat -c %Y "$_CACHE_FILE" 2>/dev/null || echo 0)))',
-    "  [[ $age -ge $_UPDATE_TTL ]]",
-    "}",
-    "",
-    "if _needs_update; then",
-    '  (umask 077; mkdir -p "$_CACHE_DIR")',
-    '  tmp="$_CACHE_FILE.tmp.$$"',
-    '  if (umask 077; curl -fsSL --connect-timeout 3 --max-time 10 "$CLAUDE_ENV_REMOTE_URL" -o "$tmp") 2>/dev/null; then',
-    '    mv "$tmp" "$_CACHE_FILE"',
-    "  else",
-    '    rm -f "$tmp"',
-    '    if [[ ! -f "$_CACHE_FILE" ]]; then',
-    '      echo "ERROR: Cannot fetch config from $CLAUDE_ENV_REMOTE_URL (no cache)" >&2',
-    "      exit 1",
-    "    fi",
-    "  fi",
-    "fi",
-    "",
-    "# ── Source remote config (sets ANTHROPIC_* exports) ──────────────────────────",
-    "# shellcheck disable=SC1090",
-    'source "$_CACHE_FILE"',
-    "",
-    "# ── Middleware ────────────────────────────────────────────────────────────────",
-    '_CLAUDE_MIDDLEWARE="${XDG_CONFIG_HOME:-$HOME/.config}/claude/middleware.sh"',
-    'if [[ -f "$_CLAUDE_MIDDLEWARE" ]]; then',
-    "  # shellcheck disable=SC1090",
-    '  source "$_CLAUDE_MIDDLEWARE"',
-    "fi",
-    "unset _CLAUDE_MIDDLEWARE",
-    "",
-    "# ── Launch ───────────────────────────────────────────────────────────────────",
-    'exec "$CLAUDE_BIN" "$@"',
-    "",
-  ].join("\n");
+async function fetchWrapper(remoteUrl) {
+  const wrapperUrl = remoteUrl.replace("claude-env.sh", "claude");
+  const script = await fetch(wrapperUrl);
+  // The only dynamic value: bake the remote config URL into the default
+  const defaultLine =
+    'CLAUDE_ENV_REMOTE_URL="${CLAUDE_ENV_URL:-https://raw.githubusercontent.com/aproorg/claude-wrapper/main/claude-env.sh}"';
+  const patchedLine = `CLAUDE_ENV_REMOTE_URL="\${CLAUDE_ENV_URL:-${remoteUrl}}"`;
+  return script.replace(defaultLine, patchedLine);
 }
 
 // ============================================================================
@@ -453,10 +397,10 @@ async function install(platform) {
     }
   }
 
-  // Write the process wrapper
-  fs.writeFileSync(wrapperPath, wrapperScript(REMOTE_ENV_URL), {
-    mode: 0o755,
-  });
+  // Download and write the process wrapper
+  info("Downloading process wrapper...");
+  const wrapperContent = await fetchWrapper(REMOTE_ENV_URL);
+  fs.writeFileSync(wrapperPath, wrapperContent, { mode: 0o755 });
   ok(`Wrote ${wrapperPath}`);
 
   // Ensure ~/.local/bin is on PATH

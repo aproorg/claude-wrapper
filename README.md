@@ -47,13 +47,16 @@ Individual developers can also override any value via `~/.config/claude/local.en
 ## Troubleshooting
 
 ```bash
-# Force refresh config cache
+# Clear all caches (API keys + remote config)
+claude --clear-cache
+
+# Force refresh config cache only
 rm ~/.cache/claude/env-remote.sh
 
 # Re-run installer to update local settings
 curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
 
-# Debug mode
+# Debug mode (shows resolved config + stale cache warnings)
 CLAUDE_DEBUG=1 claude
 ```
 
@@ -84,10 +87,10 @@ Verify: `which claude` should show `~/.local/bin/claude`.
 
 The installer writes a process wrapper to `~/.local/bin/claude` that shadows the real Claude Code binary. When you run `claude`, the wrapper:
 
-1. Finds the real binary (via `which -a claude`, skipping itself)
-2. Fetches the latest team config from this repo, caches it for 5 minutes, falls back to stale cache on network failure
+1. Finds the real binary (portable PATH iteration, skipping itself)
+2. Fetches the latest team config from this repo, validates it against an integrity check, caches it for 5 minutes, falls back to stale cache on network failure
 3. Sources the config to set `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, model defaults, and per-project API keys
-4. Optionally sources `~/.config/claude/middleware.sh` for custom pre-launch hooks
+4. Optionally sources `~/.config/claude/middleware.sh` for custom pre-launch hooks (errors are trapped with actionable messages)
 5. `exec`s the real Claude Code with all original arguments
 
 **Config override chain:** Remote defaults (`claude-env.sh`) → local overrides (`~/.config/claude/local.env`) → environment variables. Local values persist across remote config updates — the TTL-based refresh only re-fetches the remote config, never touching your local settings.
@@ -163,7 +166,7 @@ echo 'export PATH="/opt/my-tools/bin:$PATH"' > ~/.config/claude/middleware.sh
 ```
 
 - The file is optional — if missing, nothing happens.
-- Syntax errors in middleware will abort the wrapper (`set -e` is active).
+- Errors in middleware are caught and reported with an actionable message (file path + fix instructions).
 
 </details>
 

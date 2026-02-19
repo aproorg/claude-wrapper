@@ -12,25 +12,12 @@ $LiteLLM_BaseURL = "https://litellm.ai.apro.is"
 $OP_Account = "aproorg.1password.eu"
 $OP_Item = "op://Employee/ai.apro.is litellm"
 
-# ── Local overrides (from local.env written by install.js) ───────────────────
-$_LocalEnvPath = Join-Path ($env:APPDATA ?? (Join-Path $env:USERPROFILE "AppData\Roaming")) "claude\local.env"
-if (Test-Path $_LocalEnvPath) {
-    foreach ($line in Get-Content $_LocalEnvPath) {
-        if ($line -match '^(LITELLM_BASE_URL|OP_ITEM)="(.*)"') {
-            switch ($Matches[1]) {
-                "LITELLM_BASE_URL" { $LiteLLM_BaseURL = $Matches[2] }
-                "OP_ITEM"          { $OP_Item = $Matches[2] }
-            }
-        }
-    }
-}
-Remove-Variable _LocalEnvPath -ErrorAction SilentlyContinue
-
 $Model_Opus = "claude-opus-4-6"
 $Model_Sonnet = "sonnet"
 $Model_Haiku = "haiku"
 
 $CacheTTL_Seconds = 43200  # 12 hours for API keys
+$ConfigTTL_Seconds = 300   # 5 minutes for remote config
 
 # ============================================================================
 # Cache directory
@@ -45,19 +32,86 @@ if (-not (Test-Path $CacheDir)) {
 # ============================================================================
 if ($args -contains "--clear-cache") {
     Get-ChildItem -Path $CacheDir -Filter "*.key" -ErrorAction SilentlyContinue | Remove-Item -Force
-    $RemoteCache = Join-Path $CacheDir "env-remote.ps1"
+    $RemoteCache = Join-Path $CacheDir "env-remote.sh"
     if (Test-Path $RemoteCache) { Remove-Item $RemoteCache -Force }
     Write-Host "Claude env + API key cache cleared" -ForegroundColor Yellow
     exit 0
 }
 
 # ============================================================================
+# Remote config fetch + cache
+# ============================================================================
+$_RemoteUrl = if ($env:CLAUDE_ENV_URL) { $env:CLAUDE_ENV_URL } else { "https://raw.githubusercontent.com/aproorg/claude-wrapper/main/claude-env.sh" }
+$_RemoteCache = Join-Path $CacheDir "env-remote.sh"
+
+$_NeedsFetch = $true
+if (Test-Path $_RemoteCache) {
+    $_Age = ((Get-Date) - (Get-Item $_RemoteCache).LastWriteTime).TotalSeconds
+    if ($_Age -lt $ConfigTTL_Seconds) { $_NeedsFetch = $false }
+}
+
+if ($_NeedsFetch) {
+    try {
+        $_tmp = "$_RemoteCache.tmp.$PID"
+        Invoke-WebRequest -Uri $_RemoteUrl -OutFile $_tmp -TimeoutSec 10 -ErrorAction Stop
+        # Integrity check: reject dangerous patterns
+        $_content = Get-Content $_tmp -Raw
+        if ($_content -match '(rm\s+-rf\s+/|curl.*\|\s*(ba)?sh|eval\s)') {
+            Write-Host "ERROR: Remote config failed integrity check" -ForegroundColor Red
+            Remove-Item $_tmp -Force -ErrorAction SilentlyContinue
+            exit 1
+        }
+        Move-Item $_tmp $_RemoteCache -Force
+    } catch {
+        Remove-Item "$_RemoteCache.tmp.$PID" -Force -ErrorAction SilentlyContinue
+        if (-not (Test-Path $_RemoteCache)) {
+            Write-Host "ERROR: Cannot fetch config from $_RemoteUrl (no cache)" -ForegroundColor Red
+            exit 1
+        }
+        if ($env:CLAUDE_DEBUG -eq "1") {
+            $_StaleAge = [int]((Get-Date) - (Get-Item $_RemoteCache).LastWriteTime).TotalSeconds
+            Write-Host "Warning: Using stale cached config (${_StaleAge}s old, fetch failed)" -ForegroundColor Yellow
+        }
+    }
+}
+
+# Parse remote config for key overrides (remote defaults -> local overrides)
+if (Test-Path $_RemoteCache) {
+    foreach ($_line in Get-Content $_RemoteCache) {
+        if ($_line -match '^\s*(?:export\s+)?(\w+)="(.*?)"\s*$') {
+            switch ($Matches[1]) {
+                "LITELLM_BASE_URL" { $LiteLLM_BaseURL = $Matches[2] }
+                "OP_ACCOUNT"       { $OP_Account = $Matches[2] }
+                "OP_ITEM"          { $OP_Item = $Matches[2] }
+            }
+        }
+    }
+}
+Remove-Variable _RemoteUrl, _RemoteCache, _NeedsFetch, _Age, _tmp, _content, _StaleAge, _line -ErrorAction SilentlyContinue
+
+# ── Local overrides (from local.env written by install.js) ───────────────────
+$_LocalEnvPath = Join-Path ($env:APPDATA ?? (Join-Path $env:USERPROFILE "AppData\Roaming")) "claude\local.env"
+if (Test-Path $_LocalEnvPath) {
+    foreach ($line in Get-Content $_LocalEnvPath) {
+        if ($line -match '^(LITELLM_BASE_URL|OP_ITEM)="(.*)"') {
+            switch ($Matches[1]) {
+                "LITELLM_BASE_URL" { $LiteLLM_BaseURL = $Matches[2] }
+                "OP_ITEM"          { $OP_Item = $Matches[2] }
+            }
+        }
+    }
+}
+Remove-Variable _LocalEnvPath -ErrorAction SilentlyContinue
+
+# ============================================================================
 # Project Detection
 # ============================================================================
 function Sanitize-Name {
     param([string]$Name)
-    # Strip anything except alphanumeric, hyphen, underscore, dot
-    return ($Name -replace '[^a-zA-Z0-9_.\-]', '')
+    # Strip anything except alphanumeric, hyphen, underscore, dot; strip leading dots
+    $cleaned = ($Name -replace '[^a-zA-Z0-9_.\-]', '') -replace '^\.+', ''
+    if (-not $cleaned) { return 'unnamed' }
+    return $cleaned
 }
 
 function Get-ClaudeProject {
