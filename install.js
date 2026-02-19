@@ -103,10 +103,23 @@ function fetch(url) {
 // Paths
 // ============================================================================
 function installBinDir() {
+  if (process.platform === "win32") {
+    return path.join(
+      process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
+      "Programs",
+      "claude-wrapper",
+    );
+  }
   return path.join(os.homedir(), ".local", "bin");
 }
 
 function configDir() {
+  if (process.platform === "win32") {
+    return path.join(
+      process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"),
+      "claude",
+    );
+  }
   return path.join(
     process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"),
     "claude",
@@ -114,6 +127,12 @@ function configDir() {
 }
 
 function cacheDir() {
+  if (process.platform === "win32") {
+    return path.join(
+      process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
+      "claude",
+    );
+  }
   return path.join(
     process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"),
     "claude",
@@ -236,14 +255,24 @@ function wrapperScript(remoteUrl) {
 function prompt(question, defaultValue) {
   return new Promise((resolve) => {
     try {
-      const tty = fs.openSync("/dev/tty", "r+");
-      const rl = require("readline").createInterface({
-        input: new fs.createReadStream(null, { fd: tty }),
-        output: new fs.createWriteStream(null, { fd: tty }),
-      });
       const display = defaultValue
         ? `${question} [${defaultValue}]: `
         : `${question}: `;
+
+      let rl;
+      if (process.platform === "win32") {
+        // Windows: no /dev/tty; use stdin directly (works for interactive runs)
+        rl = require("readline").createInterface({
+          input: process.stdin,
+          output: process.stderr,
+        });
+      } else {
+        const tty = fs.openSync("/dev/tty", "r+");
+        rl = require("readline").createInterface({
+          input: new fs.createReadStream(null, { fd: tty }),
+          output: new fs.createWriteStream(null, { fd: tty }),
+        });
+      }
       rl.question(display, (answer) => {
         rl.close();
         resolve(answer.trim() || defaultValue || "");
@@ -272,17 +301,119 @@ function readLocalConfig(filePath) {
 function writeLocalConfig(filePath, values) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const content = [
-    "# ~/.config/claude/local.env — User-specific overrides",
-    "# Written by install.js, sourced by claude-env.sh",
+    "# Local overrides — User-specific settings",
+    "# Written by install.js, sourced by claude-env.sh / claudestart.ps1",
     `LITELLM_BASE_URL="${values.LITELLM_BASE_URL}"`,
     `OP_ITEM="${values.OP_ITEM}"`,
     "",
   ].join("\n");
-  fs.writeFileSync(filePath, content, { mode: 0o600 });
+  // mode: 0o600 is Unix-only (no-op / errors on Windows)
+  const opts = process.platform === "win32" ? {} : { mode: 0o600 };
+  fs.writeFileSync(filePath, content, opts);
 }
 
 // ============================================================================
-// Installation
+// Shared: interactive prompts for local.env
+// ============================================================================
+async function promptLocalConfig(cfgDir) {
+  const localEnvPath = path.join(cfgDir, "local.env");
+  const existing = readLocalConfig(localEnvPath);
+  const defaultUrl =
+    existing.LITELLM_BASE_URL || "https://litellm.ai.apro.is";
+  const defaultItem = existing.OP_ITEM || "op://Employee/ai.apro.is litellm";
+
+  console.error("");
+  info("Configure your local connection settings:");
+  console.error("");
+
+  let litellmUrl = "";
+  while (!litellmUrl) {
+    litellmUrl = await prompt("  LiteLLM base URL", defaultUrl);
+  }
+
+  let opItem = "";
+  while (!opItem || !opItem.startsWith("op://")) {
+    opItem = await prompt("  1Password item (op://...)", defaultItem);
+    if (opItem && !opItem.startsWith("op://")) {
+      warn("Must start with op:// — try again");
+      opItem = "";
+    }
+  }
+
+  writeLocalConfig(localEnvPath, {
+    LITELLM_BASE_URL: litellmUrl,
+    OP_ITEM: opItem,
+  });
+  ok(`Wrote ${localEnvPath}`);
+}
+
+// ============================================================================
+// Windows: install + PATH management
+// ============================================================================
+function ensureOnPathWindows(dir) {
+  try {
+    const currentPath = execSync(
+      `powershell -Command "[Environment]::GetEnvironmentVariable('Path','User')"`,
+      { encoding: "utf8" },
+    ).trim();
+
+    const normalize = (d) => d.toLowerCase().replace(/\\+$/, "");
+    const dirs = currentPath.split(";").map(normalize);
+    if (dirs.includes(normalize(dir))) {
+      ok(`${dir} is already on user PATH`);
+      return;
+    }
+
+    const newPath = currentPath ? `${currentPath};${dir}` : dir;
+    execSync(
+      `powershell -Command "[Environment]::SetEnvironmentVariable('Path','${newPath.replace(/'/g, "''")}','User')"`,
+      { stdio: "ignore" },
+    );
+    ok(`Added ${dir} to user PATH`);
+    warn("Restart your terminal for PATH changes to take effect");
+  } catch (err) {
+    warn(`Could not update PATH: ${err.message}`);
+    warn(`Manually add ${dir} to your user PATH`);
+  }
+}
+
+async function installWindows(platform) {
+  const binDir = installBinDir();
+  const cfgDir = configDir();
+  const cchDir = cacheDir();
+
+  info(`Platform: ${platform}`);
+  info(`Install dir: ${binDir}`);
+
+  // Create directories
+  fs.mkdirSync(binDir, { recursive: true });
+  fs.mkdirSync(cfgDir, { recursive: true });
+  fs.mkdirSync(cchDir, { recursive: true });
+
+  // Download claudestart.ps1
+  info("Downloading claudestart.ps1...");
+  const ps1Url = REMOTE_ENV_URL.replace("claude-env.sh", "claudestart.ps1");
+  const ps1Content = await fetch(ps1Url);
+  const ps1Path = path.join(binDir, "claudestart.ps1");
+  fs.writeFileSync(ps1Path, ps1Content);
+  ok(`Wrote ${ps1Path}`);
+
+  // Write claudestart.cmd batch shim
+  const cmdPath = path.join(binDir, "claudestart.cmd");
+  const cmdContent =
+    '@powershell -ExecutionPolicy Bypass -File "%~dp0claudestart.ps1" %*\r\n';
+  fs.writeFileSync(cmdPath, cmdContent);
+  ok(`Wrote ${cmdPath}`);
+
+  // Add to user PATH
+  ensureOnPathWindows(binDir);
+
+  // Interactive prompts for local config
+  await promptLocalConfig(cfgDir);
+}
+
+// ============================================================================
+// Installation (macOS / Linux / WSL)
 // ============================================================================
 async function install(platform) {
   const binDir = installBinDir();
@@ -351,49 +482,28 @@ async function install(platform) {
   }
 
   // Interactive prompts for local config
-  const localEnvPath = path.join(cfgDir, "local.env");
-  const existing = readLocalConfig(localEnvPath);
-  const defaultUrl =
-    existing.LITELLM_BASE_URL || "https://litellm.ai.apro.is";
-  const defaultItem = existing.OP_ITEM || "op://Employee/ai.apro.is litellm";
-
-  console.error("");
-  info("Configure your local connection settings:");
-  console.error("");
-
-  let litellmUrl = "";
-  while (!litellmUrl) {
-    litellmUrl = await prompt("  LiteLLM base URL", defaultUrl);
-  }
-
-  let opItem = "";
-  while (!opItem || !opItem.startsWith("op://")) {
-    opItem = await prompt("  1Password item (op://...)", defaultItem);
-    if (opItem && !opItem.startsWith("op://")) {
-      warn("Must start with op:// — try again");
-      opItem = "";
-    }
-  }
-
-  writeLocalConfig(localEnvPath, {
-    LITELLM_BASE_URL: litellmUrl,
-    OP_ITEM: opItem,
-  });
-  ok(`Wrote ${localEnvPath}`);
+  await promptLocalConfig(cfgDir);
 }
 
 // ============================================================================
 // Prerequisites
 // ============================================================================
-function checkPrerequisites() {
-  if (!commandExists("claude")) {
-    die(
-      "Claude Code must be installed first (brew install claude-code, or npm install -g @anthropic-ai/claude-code)",
-    );
-  }
+function checkPrerequisites(platform) {
+  if (platform === "windows") {
+    if (!commandExists("powershell")) {
+      die("PowerShell is required");
+    }
+    // Windows uses claudestart, not a shadow binary — skip claude check
+  } else {
+    if (!commandExists("claude")) {
+      die(
+        "Claude Code must be installed first (brew install claude-code, or npm install -g @anthropic-ai/claude-code)",
+      );
+    }
 
-  if (!commandExists("curl")) {
-    die("curl is required (used by the wrapper for fetching config updates)");
+    if (!commandExists("curl")) {
+      die("curl is required (used by the wrapper for fetching config updates)");
+    }
   }
 
   if (!commandExists("op")) {
@@ -416,30 +526,48 @@ async function main() {
   console.error("");
 
   const platform = detectPlatform();
-  if (platform === "windows") {
-    die(
-      "Windows is not supported by this installer. Use claudestart.ps1 instead.",
-    );
-  }
   if (platform === "unknown") {
     die(`Unsupported platform: ${process.platform}`);
   }
 
-  checkPrerequisites();
-  await install(platform);
+  checkPrerequisites(platform);
+
+  if (platform === "windows") {
+    await installWindows(platform);
+  } else {
+    await install(platform);
+  }
 
   ok("Installation complete!");
-  console.error("");
-  console.error(
-    "  The wrapper at ~/.local/bin/claude shadows the real binary,",
-  );
-  console.error("  injects your team config, and forwards all arguments.");
-  console.error("");
-  console.error("  Commands:");
-  console.error("    Verify:         which claude  (should show ~/.local/bin/claude)");
-  console.error("    Debug:          CLAUDE_DEBUG=1 claude");
-  console.error("    Force refresh:  rm ~/.cache/claude/env-remote.sh");
-  console.error("");
+
+  if (platform === "windows") {
+    console.error("");
+    console.error(
+      "  The claudestart command launches Claude Code with team config.",
+    );
+    console.error("");
+    console.error("  Commands:");
+    console.error("    Launch:         claudestart");
+    console.error("    Debug:          $env:CLAUDE_DEBUG = '1'; claudestart");
+    console.error(
+      "    Force refresh:  Remove-Item $env:LOCALAPPDATA\\claude\\env-remote.ps1",
+    );
+    console.error("");
+  } else {
+    console.error("");
+    console.error(
+      "  The wrapper at ~/.local/bin/claude shadows the real binary,",
+    );
+    console.error("  injects your team config, and forwards all arguments.");
+    console.error("");
+    console.error("  Commands:");
+    console.error(
+      "    Verify:         which claude  (should show ~/.local/bin/claude)",
+    );
+    console.error("    Debug:          CLAUDE_DEBUG=1 claude");
+    console.error("    Force refresh:  rm ~/.cache/claude/env-remote.sh");
+    console.error("");
+  }
 }
 
 main().catch((err) => die(err.message));

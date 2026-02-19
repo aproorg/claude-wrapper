@@ -170,13 +170,15 @@ echo 'export PATH="/opt/my-tools/bin:$PATH"' > ~/.config/claude/middleware.sh
 <details>
 <summary>Windows (PowerShell)</summary>
 
-1. Clone the repo: `git clone <your-fork-url> $env:USERPROFILE\claude-wrapper`
-2. Create a directory on your PATH (e.g., `C:\Users\YOU\bin`) via **System Environment Variables**
-3. Allow local scripts: `Set-ExecutionPolicy RemoteSigned` (elevated PowerShell, once)
-4. Copy the wrapper: `Copy-Item "$env:USERPROFILE\claude-wrapper\claudestart.ps1" "C:\Users\YOU\bin\claudestart.ps1"`
-5. Run: `claudestart`
+```powershell
+curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+```
 
-**Update:** `git pull` then re-copy `claudestart.ps1`.
+The installer downloads `claudestart.ps1`, creates a `claudestart.cmd` shim, adds the install directory to your user PATH, and prompts for your LiteLLM URL and 1Password item.
+
+After installation, run `claudestart` to launch Claude Code with team config.
+
+**Manual install:** Clone the repo and copy `claudestart.ps1` to a directory on your PATH. Run `Set-ExecutionPolicy RemoteSigned` first (elevated PowerShell, once).
 
 **WSL:** Follow the macOS/Linux instructions inside your WSL shell.
 

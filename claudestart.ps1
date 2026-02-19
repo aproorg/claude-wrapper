@@ -12,6 +12,20 @@ $LiteLLM_BaseURL = "https://litellm.ai.apro.is"
 $OP_Account = "aproorg.1password.eu"
 $OP_Item = "op://Employee/ai.apro.is litellm"
 
+# ── Local overrides (from local.env written by install.js) ───────────────────
+$_LocalEnvPath = Join-Path ($env:APPDATA ?? (Join-Path $env:USERPROFILE "AppData\Roaming")) "claude\local.env"
+if (Test-Path $_LocalEnvPath) {
+    foreach ($line in Get-Content $_LocalEnvPath) {
+        if ($line -match '^(LITELLM_BASE_URL|OP_ITEM)="(.*)"') {
+            switch ($Matches[1]) {
+                "LITELLM_BASE_URL" { $LiteLLM_BaseURL = $Matches[2] }
+                "OP_ITEM"          { $OP_Item = $Matches[2] }
+            }
+        }
+    }
+}
+Remove-Variable _LocalEnvPath -ErrorAction SilentlyContinue
+
 $Model_Opus = "claude-opus-4-6"
 $Model_Sonnet = "sonnet"
 $Model_Haiku = "haiku"
