@@ -10,17 +10,20 @@ Use this when your team runs a shared LiteLLM gateway and stores API keys in 1Pa
 curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
 ```
 
-The installer prompts for your **LiteLLM base URL** and **1Password item** reference. Values are stored in `~/.config/claude/local.env` and persist across updates.
+The installer:
+1. Writes a process wrapper to `~/.local/bin/claude` that shadows the real binary
+2. Adds `~/.local/bin` to your PATH (if not already there)
+3. Prompts for your **LiteLLM base URL** and **1Password item** reference
+4. Pre-fetches the team configuration
 
 > **Non-interactive mode:** When piped without a TTY (CI, Docker), prompts are skipped and defaults are used silently.
 
 ## Verify
 
 ```bash
+which claude           # Should show ~/.local/bin/claude
 CLAUDE_DEBUG=1 claude  # Shows resolved config
 ```
-
-> `which claude` still points to your original Claude binary. This is expected — the installer writes `~/.config/claude/env.sh`, which Claude Code [sources automatically on startup](https://docs.anthropic.com/en/docs/claude-code/settings). No wrapper or PATH changes needed.
 
 ## Prerequisites
 
@@ -44,21 +47,24 @@ Individual developers can also override any value via `~/.config/claude/local.en
 ## Troubleshooting
 
 ```bash
-# Force refresh config cache
+# Clear all caches (API keys + remote config)
+claude --clear-cache
+
+# Force refresh config cache only
 rm ~/.cache/claude/env-remote.sh
 
 # Re-run installer to update local settings
-node install.js
+curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
 
-# Debug mode
+# Debug mode (shows resolved config + stale cache warnings)
 CLAUDE_DEBUG=1 claude
 ```
 
 ---
 
-## Process Wrapper (Alternative Setup)
+## Developer Setup
 
-The installer writes an `env.sh` bootstrap that Claude Code sources automatically. If you prefer a **process wrapper** that intercepts the `claude` command (useful for middleware hooks or development on this repo):
+If you're working on this repo, use a symlink instead of the installed wrapper:
 
 ```bash
 git clone <your-fork-url> ~/claude-wrapper
@@ -79,11 +85,13 @@ Verify: `which claude` should show `~/.local/bin/claude`.
 <details>
 <summary>How it works</summary>
 
-**Install method (env.sh bootstrap):** The installer writes a thin bootstrap to `~/.config/claude/env.sh`, which Claude Code sources on startup. It fetches the latest config from this repo, caches it for 5 minutes, and falls back to stale cache on network failure.
+The installer writes a process wrapper to `~/.local/bin/claude` that shadows the real Claude Code binary. When you run `claude`, the wrapper:
 
-**Process wrapper method:** A symlink at `~/.local/bin/claude` shadows the real binary. It finds the real binary (via `which -a`), fetches and sources the config, then `exec`s the real Claude Code.
-
-Both methods set the same environment: `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, model defaults, and per-project API keys.
+1. Finds the real binary (portable PATH iteration, skipping itself)
+2. Fetches the latest team config from this repo, validates it against an integrity check, caches it for 5 minutes, falls back to stale cache on network failure
+3. Sources the config to set `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, model defaults, and per-project API keys
+4. Optionally sources `~/.config/claude/middleware.sh` for custom pre-launch hooks (errors are trapped with actionable messages)
+5. `exec`s the real Claude Code with all original arguments
 
 **Config override chain:** Remote defaults (`claude-env.sh`) → local overrides (`~/.config/claude/local.env`) → environment variables. Local values persist across remote config updates — the TTL-based refresh only re-fetches the remote config, never touching your local settings.
 
@@ -120,10 +128,10 @@ Override project detection: `CLAUDE_PROJECT=my-project claude`
 
 | File | Purpose |
 |------|---------|
-| `~/.config/claude/env.sh` | Thin bootstrap (written by installer) |
+| `~/.local/bin/claude` | Process wrapper (written by installer) |
 | `~/.cache/claude/env-remote.sh` | Cached remote config (auto-refreshed) |
 | `~/.config/claude/local.env` | Your local overrides (never auto-modified) |
-| `~/.config/claude/middleware.sh` | Optional pre-launch hook (process wrapper only) |
+| `~/.config/claude/middleware.sh` | Optional pre-launch hook |
 
 </details>
 
@@ -137,7 +145,7 @@ The installer stores your LiteLLM URL and 1Password item in `~/.config/claude/lo
 cat ~/.config/claude/local.env
 
 # Re-run installer to change values (shows current as defaults)
-node install.js
+curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
 ```
 
 The file uses simple `KEY="VALUE"` format and has `0600` permissions.
@@ -158,21 +166,22 @@ echo 'export PATH="/opt/my-tools/bin:$PATH"' > ~/.config/claude/middleware.sh
 ```
 
 - The file is optional — if missing, nothing happens.
-- Syntax errors in middleware will abort the wrapper (`set -e` is active).
-- Middleware is sourced by the **process wrapper** only, not the env.sh bootstrap path.
+- Errors in middleware are caught and reported with an actionable message (file path + fix instructions).
 
 </details>
 
 <details>
 <summary>Windows (PowerShell)</summary>
 
-1. Clone the repo: `git clone <your-fork-url> $env:USERPROFILE\claude-wrapper`
-2. Create a directory on your PATH (e.g., `C:\Users\YOU\bin`) via **System Environment Variables**
-3. Allow local scripts: `Set-ExecutionPolicy RemoteSigned` (elevated PowerShell, once)
-4. Copy the wrapper: `Copy-Item "$env:USERPROFILE\claude-wrapper\claudestart.ps1" "C:\Users\YOU\bin\claudestart.ps1"`
-5. Run: `claudestart`
+```powershell
+curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+```
 
-**Update:** `git pull` then re-copy `claudestart.ps1`.
+The installer downloads `claudestart.ps1`, creates a `claudestart.cmd` shim, adds the install directory to your user PATH, and prompts for your LiteLLM URL and 1Password item.
+
+After installation, run `claudestart` to launch Claude Code with team config.
+
+**Manual install:** Clone the repo and copy `claudestart.ps1` to a directory on your PATH. Run `Set-ExecutionPolicy RemoteSigned` first (elevated PowerShell, once).
 
 **WSL:** Follow the macOS/Linux instructions inside your WSL shell.
 
@@ -187,14 +196,7 @@ Add to your `settings.json`:
 {
   "claudeCode.environmentVariables": [
     { "name": "CLAUDE_CODE_SKIP_AUTH_LOGIN", "value": "1" }
-  ]
-}
-```
-
-If using the process wrapper, also add:
-
-```json
-{
+  ],
   "claudeCode.claudeProcessWrapper": "/Users/YOU/.local/bin/claude"
 }
 ```

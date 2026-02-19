@@ -8,21 +8,47 @@
 
 set -euo pipefail
 
-# ── Real binary ──────────────────────────────────────────────────────────────
-# Find the actual claude binary, skipping this wrapper
-CLAUDE_BIN=""
-while IFS= read -r candidate; do
-  [[ "$(readlink -f "$candidate" 2>/dev/null || echo "$candidate")" == "$(readlink -f "$0" 2>/dev/null || echo "$0")" ]] && continue
-  CLAUDE_BIN="$candidate"
-  break
-done < <(which -a claude 2>/dev/null)
+# ── Portable realpath (macOS lacks readlink -f) ─────────────────────────────
+_realpath() {
+  local p="$1"
+  while [[ -L "$p" ]]; do
+    local dir
+    dir="$(cd -P "$(dirname "$p")" && pwd)"
+    p="$(readlink "$p")"
+    [[ "$p" != /* ]] && p="$dir/$p"
+  done
+  cd -P "$(dirname "$p")" && echo "$(pwd)/$(basename "$p")"
+}
 
-if [[ -z "$CLAUDE_BIN" ]]; then
-  echo "ERROR: Cannot find the real claude binary" >&2
+# ── Find real binary (POSIX PATH iteration, replaces which -a) ──────────────
+_find_real_claude() {
+  local self
+  self="$(_realpath "$0")"
+  local IFS=:
+  for dir in $PATH; do
+    local candidate="$dir/claude"
+    [[ -x "$candidate" ]] || continue
+    [[ "$(_realpath "$candidate")" == "$self" ]] && continue
+    echo "$candidate"
+    return
+  done
+  return 1
+}
+
+CLAUDE_BIN="$(_find_real_claude)" || {
+  echo "ERROR: Cannot find the real claude binary on PATH" >&2
   exit 1
+}
+
+# ── Handle --clear-cache ────────────────────────────────────────────────────
+if [[ "${1:-}" == "--clear-cache" ]]; then
+  rm -f "${XDG_CACHE_HOME:-$HOME/.cache}/claude"/*.key
+  rm -f "${XDG_CACHE_HOME:-$HOME/.cache}/claude/env-remote.sh"
+  echo "Claude env + API key cache cleared" >&2
+  exit 0
 fi
 
-# ── Remote config fetch + cache ──────────────────────────────────────────────
+# ── Remote config fetch + cache ─────────────────────────────────────────────
 CLAUDE_ENV_REMOTE_URL="${CLAUDE_ENV_URL:-https://raw.githubusercontent.com/aproorg/claude-wrapper/main/claude-env.sh}"
 _CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/claude"
 _CACHE_FILE="$_CACHE_DIR/env-remote.sh"
@@ -39,6 +65,12 @@ if _needs_update; then
   (umask 077; mkdir -p "$_CACHE_DIR")
   tmp="$_CACHE_FILE.tmp.$$"
   if (umask 077; curl -fsSL --connect-timeout 3 --max-time 10 "$CLAUDE_ENV_REMOTE_URL" -o "$tmp") 2>/dev/null; then
+    # Integrity check: sourced config must not contain dangerous patterns
+    if grep -qE '(rm\s+-rf\s+/|curl.*\|\s*(ba)?sh|eval\s)' "$tmp" 2>/dev/null; then
+      echo "ERROR: Remote config failed integrity check — refusing to source" >&2
+      rm -f "$tmp"
+      exit 1
+    fi
     mv "$tmp" "$_CACHE_FILE"
   else
     rm -f "$tmp"
@@ -46,20 +78,30 @@ if _needs_update; then
       echo "ERROR: Cannot fetch config from $CLAUDE_ENV_REMOTE_URL (no cache)" >&2
       exit 1
     fi
+    # Stale cache fallback
+    if [[ "${CLAUDE_DEBUG:-0}" == "1" ]]; then
+      _stale_age=$(($(date +%s) - $(stat -f %m "$_CACHE_FILE" 2>/dev/null || stat -c %Y "$_CACHE_FILE" 2>/dev/null || echo 0)))
+      echo "Warning: Using stale cached config (${_stale_age}s old, fetch failed)" >&2
+      unset _stale_age
+    fi
   fi
 fi
 
-# ── Source remote config (sets ANTHROPIC_* exports) ──────────────────────────
+# ── Source remote config (sets ANTHROPIC_* exports) ─────────────────────────
 # shellcheck disable=SC1090
 source "$_CACHE_FILE"
 
-# ── Middleware ────────────────────────────────────────────────────────────────
+# ── Middleware ──────────────────────────────────────────────────────────────
 _CLAUDE_MIDDLEWARE="${XDG_CONFIG_HOME:-$HOME/.config}/claude/middleware.sh"
 if [[ -f "$_CLAUDE_MIDDLEWARE" ]]; then
   # shellcheck disable=SC1090
-  source "$_CLAUDE_MIDDLEWARE"
+  if ! source "$_CLAUDE_MIDDLEWARE"; then
+    echo "ERROR: Middleware script failed: $_CLAUDE_MIDDLEWARE" >&2
+    echo "Fix the script or remove it to launch Claude without middleware." >&2
+    exit 1
+  fi
 fi
 unset _CLAUDE_MIDDLEWARE
 
-# ── Launch ───────────────────────────────────────────────────────────────────
+# ── Launch ─────────────────────────────────────────────────────────────────
 exec "$CLAUDE_BIN" "$@"

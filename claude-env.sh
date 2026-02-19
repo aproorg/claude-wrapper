@@ -27,8 +27,10 @@ CLAUDE_MODEL_HAIKU="haiku"
 # Project Detection
 # ============================================================================
 sanitize_name() {
-  # Strip anything except alphanumeric, hyphen, underscore, dot
-  echo "$1" | tr -cd 'a-zA-Z0-9_.-'
+  # Strip anything except alphanumeric, hyphen, underscore, dot; strip leading dots
+  local name
+  name=$(echo "$1" | tr -cd 'a-zA-Z0-9_.-' | sed 's/^\.*//')
+  echo "${name:-unnamed}"
 }
 
 detect_project() {
@@ -119,6 +121,7 @@ export CLAUDE_CODE_SUBAGENT_MODEL="${CLAUDE_MODEL_HAIKU}"
 # Feature flags
 export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
 export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 
 # Get API key
 if API_KEY=$(get_api_key "$CLAUDE_PROJECT"); then
