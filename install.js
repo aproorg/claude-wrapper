@@ -104,6 +104,55 @@ function cacheDir(platform) {
 }
 
 // ============================================================================
+// Interactive prompting (via /dev/tty for curl-pipe compatibility)
+// ============================================================================
+function prompt(question, defaultValue) {
+  return new Promise((resolve) => {
+    try {
+      const tty = fs.openSync("/dev/tty", "r+");
+      const rl = require("readline").createInterface({
+        input: new fs.createReadStream(null, { fd: tty }),
+        output: new fs.createWriteStream(null, { fd: tty }),
+      });
+      const display = defaultValue ? `${question} [${defaultValue}]: ` : `${question}: `;
+      rl.question(display, (answer) => {
+        rl.close();
+        resolve(answer.trim() || defaultValue || "");
+      });
+    } catch {
+      resolve(defaultValue || "");
+    }
+  });
+}
+
+// ============================================================================
+// Local config (local.env) read/write
+// ============================================================================
+function readLocalConfig(filePath) {
+  const values = {};
+  try {
+    const content = fs.readFileSync(filePath, "utf8");
+    for (const line of content.split("\n")) {
+      const m = line.match(/^(LITELLM_BASE_URL|OP_ITEM)="(.*)"\s*$/);
+      if (m) values[m[1]] = m[2];
+    }
+  } catch {}
+  return values;
+}
+
+function writeLocalConfig(filePath, values) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const content = [
+    "# ~/.config/claude/local.env — User-specific overrides",
+    "# Written by install.js, sourced by claude-env.sh",
+    `LITELLM_BASE_URL="${values.LITELLM_BASE_URL}"`,
+    `OP_ITEM="${values.OP_ITEM}"`,
+    "",
+  ].join("\n");
+  fs.writeFileSync(filePath, content, { mode: 0o600 });
+}
+
+// ============================================================================
 // env.sh template
 // ============================================================================
 function envTemplate(remoteUrl) {
@@ -209,6 +258,33 @@ async function install(platform) {
     warn(`  URL: ${REMOTE_ENV_URL}`);
     warn("The bootstrap will retry on next Claude invocation");
   }
+
+  // Interactive prompts for local config
+  const localEnvPath = path.join(cfgDir, "local.env");
+  const existing = readLocalConfig(localEnvPath);
+  const defaultUrl = existing.LITELLM_BASE_URL || "https://litellm.ai.apro.is";
+  const defaultItem = existing.OP_ITEM || "op://Employee/ai.apro.is litellm";
+
+  console.error("");
+  info("Configure your local connection settings:");
+  console.error("");
+
+  let litellmUrl = "";
+  while (!litellmUrl) {
+    litellmUrl = await prompt("  LiteLLM base URL", defaultUrl);
+  }
+
+  let opItem = "";
+  while (!opItem || !opItem.startsWith("op://")) {
+    opItem = await prompt("  1Password item (op://...)", defaultItem);
+    if (opItem && !opItem.startsWith("op://")) {
+      warn("Must start with op:// — try again");
+      opItem = "";
+    }
+  }
+
+  writeLocalConfig(localEnvPath, { LITELLM_BASE_URL: litellmUrl, OP_ITEM: opItem });
+  ok(`Wrote ${localEnvPath}`);
 }
 
 // ============================================================================
@@ -252,10 +328,13 @@ async function main() {
   console.error("  which fetches the latest config from:");
   console.error(`    ${REMOTE_ENV_URL}`);
   console.error("");
+  console.error("  Note: 'which claude' will still point to your existing Claude binary.");
+  console.error("  This is expected — the config is loaded via env.sh, not a wrapper.");
+  console.error("");
   console.error("  Commands:");
+  console.error("    Verify:         CLAUDE_DEBUG=1 claude");
   console.error("    Force refresh:  rm ~/.cache/claude/env-remote.sh");
   console.error("    Clear all:      source ~/.config/claude/env.sh --clear-cache");
-  console.error("    Debug mode:     CLAUDE_DEBUG=1 claude");
   console.error("");
 }
 
