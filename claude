@@ -53,5 +53,13 @@ fi
 # shellcheck disable=SC1090
 source "$_CACHE_FILE"
 
+# ── Middleware ────────────────────────────────────────────────────────────────
+_CLAUDE_MIDDLEWARE="${XDG_CONFIG_HOME:-$HOME/.config}/claude/middleware.sh"
+if [[ -f "$_CLAUDE_MIDDLEWARE" ]]; then
+  # shellcheck disable=SC1090
+  source "$_CLAUDE_MIDDLEWARE"
+fi
+unset _CLAUDE_MIDDLEWARE
+
 # ── Launch ───────────────────────────────────────────────────────────────────
 exec "$CLAUDE_BIN" "$@"

@@ -10,6 +10,14 @@ LITELLM_BASE_URL="https://litellm.ai.apro.is"
 OP_ACCOUNT="aproorg.1password.eu"
 OP_ITEM="op://Employee/ai.apro.is litellm"
 
+# Source local overrides (written by install.js)
+_CLAUDE_LOCAL_ENV="${XDG_CONFIG_HOME:-$HOME/.config}/claude/local.env"
+if [[ -f "$_CLAUDE_LOCAL_ENV" ]]; then
+  # shellcheck disable=SC1090
+  source "$_CLAUDE_LOCAL_ENV"
+fi
+unset _CLAUDE_LOCAL_ENV
+
 # Models
 CLAUDE_MODEL_OPUS="claude-opus-4-6"
 CLAUDE_MODEL_SONNET="sonnet"

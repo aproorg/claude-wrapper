@@ -1,56 +1,45 @@
 # claude-wrapper
 
-Routes Claude Code through APRO's LiteLLM gateway with automatic API key management via 1Password.
+Route Claude Code through a [LiteLLM](https://docs.litellm.ai/) proxy with automatic API key management via [1Password CLI](https://developer.1password.com/docs/cli/).
+
+Use this when your team runs a shared LiteLLM gateway and stores API keys in 1Password. The wrapper handles config distribution, per-project key rotation, and keeps developer machines in sync — no manual env vars to manage.
 
 ## Install
-
-### macOS / Linux
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
 ```
 
-That's it. Next time you run `claude`, it will automatically use APRO's LiteLLM gateway.
+The installer prompts for your **LiteLLM base URL** and **1Password item** reference. Values are stored in `~/.config/claude/local.env` and persist across updates.
 
-### Windows
-
-```powershell
-git clone git@github.com:aproorg/claude-wrapper.git $env:USERPROFILE\code\apro\claude-wrapper
-```
-
-Then copy `claudestart.ps1` to a directory on your PATH and run `claudestart` from PowerShell. See [Windows details](#windows-details) below.
-
-### VSCode
-
-Add to your `settings.json`:
-
-```json
-{
-  "claudeCode.environmentVariables": [
-    { "name": "CLAUDE_CODE_SKIP_AUTH_LOGIN", "value": "1" }
-  ]
-}
-```
-
-If using the process wrapper (see [Developer setup](#developer-setup)), also add:
-
-```json
-{
-  "claudeCode.claudeProcessWrapper": "/Users/USER/.local/bin/claude"
-}
-```
+> **Non-interactive mode:** When piped without a TTY (CI, Docker), prompts are skipped and defaults are used silently.
 
 ## Verify
 
 ```bash
-CLAUDE_DEBUG=1 claude  # Shows config being loaded
+CLAUDE_DEBUG=1 claude  # Shows resolved config
 ```
+
+> `which claude` still points to your original Claude binary. This is expected — the installer writes `~/.config/claude/env.sh`, which Claude Code [sources automatically on startup](https://docs.anthropic.com/en/docs/claude-code/settings). No wrapper or PATH changes needed.
 
 ## Prerequisites
 
 - **Claude Code** installed (Homebrew, npm, or standalone)
-- **[1Password CLI](https://developer.1password.com/docs/cli/get-started/)** (`op`) with CLI integration enabled in **Settings > Developer**
+- **[1Password CLI](https://developer.1password.com/docs/cli/get-started/)** (`op`) with CLI integration enabled
 - **curl** and **git**
+
+## Forking for Your Organization
+
+This repo ships with defaults for the maintainers' infrastructure. To use it for your own org:
+
+1. **Fork the repo** and update `claude-env.sh`:
+   - `LITELLM_BASE_URL` — your LiteLLM gateway URL
+   - `OP_ACCOUNT` — your 1Password team domain
+   - `OP_ITEM` — the 1Password vault path for your API keys
+2. **Update the install URL** in your fork's README to point to your raw GitHub URL
+3. **Distribute** — team members run your fork's one-liner to install
+
+Individual developers can also override any value via `~/.config/claude/local.env` without touching the shared config.
 
 ## Troubleshooting
 
@@ -58,21 +47,24 @@ CLAUDE_DEBUG=1 claude  # Shows config being loaded
 # Force refresh config cache
 rm ~/.cache/claude/env-remote.sh
 
+# Re-run installer to update local settings
+node install.js
+
 # Debug mode
 CLAUDE_DEBUG=1 claude
 ```
 
 ---
 
-## Developer Setup
+## Process Wrapper (Alternative Setup)
 
-If you want to work on the wrapper itself (or prefer the process wrapper over the env.sh bootstrap):
+The installer writes an `env.sh` bootstrap that Claude Code sources automatically. If you prefer a **process wrapper** that intercepts the `claude` command (useful for middleware hooks or development on this repo):
 
 ```bash
-git clone git@github.com:aproorg/claude-wrapper.git ~/code/apro/claude-wrapper
+git clone <your-fork-url> ~/claude-wrapper
 
 mkdir -p ~/.local/bin
-ln -sf ~/code/apro/claude-wrapper/claude ~/.local/bin/claude
+ln -sf ~/claude-wrapper/claude ~/.local/bin/claude
 
 # Add to your .bashrc / .zshrc if ~/.local/bin isn't already on PATH:
 export PATH="$HOME/.local/bin:$PATH"
@@ -87,21 +79,23 @@ Verify: `which claude` should show `~/.local/bin/claude`.
 <details>
 <summary>How it works</summary>
 
-**Install method (env.sh bootstrap):** The installer writes a thin bootstrap to `~/.config/claude/env.sh`, which Claude Code automatically sources on startup. It fetches the latest config from this repo, caches it for 5 minutes, and falls back to stale cache on network failure.
+**Install method (env.sh bootstrap):** The installer writes a thin bootstrap to `~/.config/claude/env.sh`, which Claude Code sources on startup. It fetches the latest config from this repo, caches it for 5 minutes, and falls back to stale cache on network failure.
 
-**Developer method (process wrapper):** The symlink at `~/.local/bin/claude` shadows the real binary. When you run `claude`, it finds the real binary (via `which -a`), fetches and sources the config, then launches the real Claude Code with your arguments.
+**Process wrapper method:** A symlink at `~/.local/bin/claude` shadows the real binary. It finds the real binary (via `which -a`), fetches and sources the config, then `exec`s the real Claude Code.
 
 Both methods set the same environment: `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, model defaults, and per-project API keys.
+
+**Config override chain:** Remote defaults (`claude-env.sh`) → local overrides (`~/.config/claude/local.env`) → environment variables. Local values persist across remote config updates — the TTL-based refresh only re-fetches the remote config, never touching your local settings.
 
 </details>
 
 <details>
 <summary>Per-project API keys</summary>
 
-The wrapper detects the current project from the git remote (or directory name) and looks up a project-specific API key in 1Password. If none exists, it uses the default key.
+The wrapper detects the current project from the git remote (or directory name) and looks up a project-specific API key field in your 1Password item. If no project-specific field exists, it falls back to the default `API Key` field.
 
 ```
-1Password item: "op://Employee/ai.apro.is litellm"
+1Password item: "op://Vault/your-litellm-item"
   ├── API Key          (default fallback)
   ├── backend-api      (project-specific)
   └── customer-portal  (project-specific)
@@ -122,15 +116,60 @@ Override project detection: `CLAUDE_PROJECT=my-project claude`
 | `CLAUDE_PROJECT` | (auto-detected) | Override project name |
 | `CLAUDE_DEBUG` | `0` | Enable debug output |
 
+**Files:**
+
+| File | Purpose |
+|------|---------|
+| `~/.config/claude/env.sh` | Thin bootstrap (written by installer) |
+| `~/.cache/claude/env-remote.sh` | Cached remote config (auto-refreshed) |
+| `~/.config/claude/local.env` | Your local overrides (never auto-modified) |
+| `~/.config/claude/middleware.sh` | Optional pre-launch hook (process wrapper only) |
+
 </details>
 
 <details>
-<summary id="windows-details">Windows details</summary>
+<summary>Local config (local.env)</summary>
 
-1. Clone the repo (see above)
+The installer stores your LiteLLM URL and 1Password item in `~/.config/claude/local.env`. These values override the remote defaults and are never touched by automatic updates.
+
+```bash
+# View current settings
+cat ~/.config/claude/local.env
+
+# Re-run installer to change values (shows current as defaults)
+node install.js
+```
+
+The file uses simple `KEY="VALUE"` format and has `0600` permissions.
+
+</details>
+
+<details>
+<summary>Middleware</summary>
+
+Create `~/.config/claude/middleware.sh` to run custom shell commands before Claude launches. The file is **sourced** (not executed), so it can export environment variables, modify PATH, or run setup commands.
+
+```bash
+# Example: add a custom env var
+echo 'export MY_CUSTOM_VAR="hello"' > ~/.config/claude/middleware.sh
+
+# Example: prepend to PATH
+echo 'export PATH="/opt/my-tools/bin:$PATH"' > ~/.config/claude/middleware.sh
+```
+
+- The file is optional — if missing, nothing happens.
+- Syntax errors in middleware will abort the wrapper (`set -e` is active).
+- Middleware is sourced by the **process wrapper** only, not the env.sh bootstrap path.
+
+</details>
+
+<details>
+<summary>Windows (PowerShell)</summary>
+
+1. Clone the repo: `git clone <your-fork-url> $env:USERPROFILE\claude-wrapper`
 2. Create a directory on your PATH (e.g., `C:\Users\YOU\bin`) via **System Environment Variables**
 3. Allow local scripts: `Set-ExecutionPolicy RemoteSigned` (elevated PowerShell, once)
-4. Copy the wrapper: `Copy-Item "$env:USERPROFILE\code\apro\claude-wrapper\claudestart.ps1" "C:\Users\YOU\bin\claudestart.ps1"`
+4. Copy the wrapper: `Copy-Item "$env:USERPROFILE\claude-wrapper\claudestart.ps1" "C:\Users\YOU\bin\claudestart.ps1"`
 5. Run: `claudestart`
 
 **Update:** `git pull` then re-copy `claudestart.ps1`.
@@ -140,10 +179,24 @@ Override project detection: `CLAUDE_PROJECT=my-project claude`
 </details>
 
 <details>
-<summary>Plugin marketplace</summary>
+<summary>VSCode integration</summary>
 
+Add to your `settings.json`:
+
+```json
+{
+  "claudeCode.environmentVariables": [
+    { "name": "CLAUDE_CODE_SKIP_AUTH_LOGIN", "value": "1" }
+  ]
+}
 ```
-/plugins marketplace add git@github.com:aproorg/claude-code-apro-plugin-marketplace.git
+
+If using the process wrapper, also add:
+
+```json
+{
+  "claudeCode.claudeProcessWrapper": "/Users/YOU/.local/bin/claude"
+}
 ```
 
 </details>
