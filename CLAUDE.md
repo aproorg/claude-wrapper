@@ -84,3 +84,10 @@ No build step, no tests, no package.json — all scripts run directly.
 - **Middleware is process-wrapper only** — `~/.config/claude/middleware.sh` is sourced by the `claude` wrapper but NOT by the env.sh bootstrap path. Users of the bootstrap path don't get middleware.
 - **Key cache files** — `.key` files in `~/.cache/claude/` are gitignored in this repo but the pattern also matches the runtime cache. The 12h TTL is in `claude-env.sh`, not configurable via env var.
 - **1Password `op` account** — Hardcoded to `aproorg.1password.eu` in `claude-env.sh` and `claudestart.ps1`. Not overridable via local.env.
+
+## Active Technologies
+- Bash (4.0+, POSIX-compatible subset) and PowerShell (5.1+/7+) + `op` (1Password CLI), `curl`, `stat`, `git` (002-token-ttl-cache)
+- Flat files — `~/.cache/claude/<project>.key` (Unix), `%LOCALAPPDATA%\claude\<project>.key` (Windows) (002-token-ttl-cache)
+
+## Recent Changes
+- 002-token-ttl-cache: Added Bash (4.0+, POSIX-compatible subset) and PowerShell (5.1+/7+) + `op` (1Password CLI), `curl`, `stat`, `git`

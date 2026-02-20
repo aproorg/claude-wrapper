@@ -78,6 +78,94 @@ export PATH="$HOME/.local/bin:$PATH"
 
 Verify: `which claude` should show `~/.local/bin/claude`.
 
+### E2E Testing
+
+There's no automated test suite — verify the full install-to-launch path manually.
+
+**1. Clean slate**
+
+```bash
+# Back up your current wrapper, then remove it along with all caches
+cp ~/.local/bin/claude ~/.local/bin/claude.bak
+rm -f ~/.local/bin/claude
+rm -f ~/.cache/claude/env-remote.sh ~/.cache/claude/*.key
+
+# Confirm only the real binary remains
+which claude  # should show /opt/homebrew/bin/claude (or wherever yours lives)
+```
+
+**2. Install via curl**
+
+```bash
+CLAUDE_FORCE=1 curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+```
+
+**3. Verify the wrapper shadows the real binary**
+
+```bash
+which claude           # must show ~/.local/bin/claude, NOT the real binary
+CLAUDE_DEBUG=1 claude --version
+# Expected: key=fetched (or key=cached), project name, base URL, model, then version
+```
+
+**4. Test cache hit (no 1Password prompt)**
+
+```bash
+CLAUDE_DEBUG=1 claude --version
+# Expected: key=cached (no 1Password prompt on second run)
+```
+
+**5. Test empty-file guard**
+
+```bash
+: > ~/.cache/claude/$(basename $(git remote get-url origin 2>/dev/null | sed 's/.*\///;s/\.git$//')).key
+CLAUDE_DEBUG=1 claude --version
+# Expected: key=fetched (empty cache file treated as miss)
+```
+
+**6. Test cache re-fetch**
+
+```bash
+rm ~/.cache/claude/env-remote.sh
+CLAUDE_DEBUG=1 claude --version  # should re-fetch remote config
+```
+
+**7. Test env var override**
+
+```bash
+CLAUDE_MODEL="claude-sonnet-4-20250514" CLAUDE_DEBUG=1 claude --version
+# model line should show claude-sonnet-4-20250514
+```
+
+**8. Test clear-cache**
+
+```bash
+claude --clear-cache
+ls ~/.cache/claude/          # .key files and env-remote.sh should be gone
+CLAUDE_DEBUG=1 claude --version  # should recover by re-fetching everything
+```
+
+**9. Restore**
+
+```bash
+# If you use the dev symlink:
+ln -sf ~/claude-wrapper/claude ~/.local/bin/claude
+# Or restore the backup:
+mv ~/.local/bin/claude.bak ~/.local/bin/claude
+```
+
+| Step | What to check |
+|------|---------------|
+| Install | Wrapper, `local.env`, and cached remote config all written |
+| `which claude` | Resolves to `~/.local/bin/claude`, not the real binary |
+| Debug output | `key=fetched` or `key=cached`, correct project, base URL, and model |
+| Cache hit | Second run shows `key=cached`, no 1Password prompt |
+| Empty-file guard | Empty `.key` file treated as cache miss (`key=fetched`) |
+| Cache re-fetch | Re-fetches after deleting `env-remote.sh` |
+| Env var override | `CLAUDE_MODEL` takes priority over remote + local config |
+| Clear cache | Removes all `.key` files and `env-remote.sh` |
+| Recovery | Wrapper re-fetches everything and launches successfully |
+
 ---
 
 ## Reference
