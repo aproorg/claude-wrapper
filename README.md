@@ -173,22 +173,92 @@ echo 'export PATH="/opt/my-tools/bin:$PATH"' > ~/.config/claude/middleware.sh
 <details>
 <summary>Windows (PowerShell)</summary>
 
+### Install
+
 ```powershell
 curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
 ```
 
-The installer downloads `claudestart.ps1`, creates a `claudestart.cmd` shim, adds the install directory to your user PATH, and prompts for your LiteLLM URL and 1Password item.
+The installer:
+1. Downloads `claudestart.ps1` to `%LOCALAPPDATA%\claude\bin\`
+2. Creates a `claudestart.cmd` shim so it works from `cmd.exe` too
+3. Adds the install directory to your user PATH
+4. Prompts for your **LiteLLM base URL** and **1Password item** reference
 
-After installation, run `claudestart` to launch Claude Code with team config.
+> **Note:** On Windows the command is `claudestart` (not `claude`) because Windows doesn't support the same binary-shadowing trick used on macOS/Linux.
 
-**Manual install:** Clone the repo and copy `claudestart.ps1` to a directory on your PATH. Run `Set-ExecutionPolicy RemoteSigned` first (elevated PowerShell, once).
+### Verify
 
-**WSL:** Follow the macOS/Linux instructions inside your WSL shell.
+```powershell
+Get-Command claudestart           # Should show the .cmd shim
+$env:CLAUDE_DEBUG = "1"; claudestart  # Shows resolved config
+```
+
+### Prerequisites
+
+- **Claude Code** installed (npm global install or standalone)
+- **[1Password CLI](https://developer.1password.com/docs/cli/get-started/)** (`op.exe`) with CLI integration enabled
+- **PowerShell 5.1+** (ships with Windows 10/11) or **PowerShell 7+**
+- **git** (for project detection)
+
+### Troubleshooting
+
+```powershell
+# Clear all caches (API keys + remote config)
+claudestart --clear-cache
+
+# Force refresh config cache only
+Remove-Item "$env:LOCALAPPDATA\claude\env-remote.sh"
+
+# Re-run installer to update local settings
+curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+
+# Debug mode
+$env:CLAUDE_DEBUG = "1"; claudestart
+```
+
+### File locations
+
+| File | Purpose |
+|------|---------|
+| `%LOCALAPPDATA%\claude\bin\claudestart.ps1` | PowerShell wrapper |
+| `%LOCALAPPDATA%\claude\bin\claudestart.cmd` | CMD shim |
+| `%LOCALAPPDATA%\claude\env-remote.sh` | Cached remote config |
+| `%APPDATA%\claude\local.env` | Your local overrides |
+| `%LOCALAPPDATA%\claude\<project>.key` | Cached API keys (12h TTL) |
+
+### Manual install
+
+If you prefer not to use the installer:
+
+1. Run `Set-ExecutionPolicy RemoteSigned` in an elevated PowerShell (once)
+2. Clone the repo and copy `claudestart.ps1` to a directory on your PATH
+3. Create a `claudestart.cmd` next to it with:
+   ```
+   @powershell -ExecutionPolicy Bypass -File "%~dp0claudestart.ps1" %*
+   ```
+
+### WSL
+
+Follow the macOS/Linux instructions inside your WSL shell — WSL uses the bash wrapper, not the PowerShell one.
+
+### VSCode on Windows
+
+Add to your `settings.json`:
+
+```json
+{
+  "claudeCode.environmentVariables": [
+    { "name": "CLAUDE_CODE_SKIP_AUTH_LOGIN", "value": "1" }
+  ],
+  "claudeCode.claudeProcessWrapper": "claudestart.cmd"
+}
+```
 
 </details>
 
 <details>
-<summary>VSCode integration</summary>
+<summary>VSCode integration (macOS/Linux)</summary>
 
 Add to your `settings.json`:
 
