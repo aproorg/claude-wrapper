@@ -143,10 +143,11 @@ function Get-ApiKey {
 
     $cacheFile = Join-Path $CacheDir "$Project.key"
 
-    # Check cache
-    if (Test-Path $cacheFile) {
+    # Check cache (file must exist and be non-empty)
+    if ((Test-Path $cacheFile) -and (Get-Item $cacheFile).Length -gt 0) {
         $age = (Get-Date) - (Get-Item $cacheFile).LastWriteTime
         if ($age.TotalSeconds -lt $CacheTTL_Seconds) {
+            if ($env:CLAUDE_DEBUG -eq "1") { Write-Host "key=cached" -ForegroundColor Cyan }
             return (Get-Content $cacheFile -Raw).Trim()
         }
     }
@@ -174,8 +175,12 @@ function Get-ApiKey {
         return $null
     }
 
-    # Cache
-    $key | Out-File -FilePath $cacheFile -NoNewline -Encoding UTF8
+    # Cache (atomic: write to temp then rename)
+    $tmpFile = "$cacheFile.tmp.$PID"
+    $key | Out-File -FilePath $tmpFile -NoNewline -Encoding UTF8
+    Move-Item $tmpFile $cacheFile -Force
+
+    if ($env:CLAUDE_DEBUG -eq "1") { Write-Host "key=fetched" -ForegroundColor Cyan }
     return $key
 }
 
