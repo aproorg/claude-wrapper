@@ -238,6 +238,23 @@ curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install
 
 The file uses simple `KEY="VALUE"` format and has `0600` permissions.
 
+**Overriding the team 1Password account** (e.g. if your key is in a personal account):
+
+```bash
+# ~/.config/claude/local.env
+OP_ACCOUNT="my"                        # shorthand for personal account (my.1password.eu)
+OP_ITEM="op://Vault/your-item-name"    # your vault item path
+```
+
+**Fallback token** (if 1Password isn't available):
+
+```bash
+# ~/.config/claude/local.env
+ANTHROPIC_AUTH_TOKEN="your-token-here"
+```
+
+The wrapper sets this before attempting 1Password. If 1Password succeeds it takes precedence; if it fails the token is already in place.
+
 </details>
 
 <details>
@@ -326,13 +343,9 @@ If you prefer not to use the installer:
    @powershell -ExecutionPolicy Bypass -File "%~dp0claudestart.ps1" %*
    ```
 
-### WSL
-
-Follow the macOS/Linux instructions inside your WSL shell — WSL uses the bash wrapper, not the PowerShell one.
-
 ### VSCode on Windows
 
-Add to your `settings.json`:
+Add to your `settings.json` (`%APPDATA%\Code\User\settings.json`):
 
 ```json
 {
@@ -346,17 +359,88 @@ Add to your `settings.json`:
 </details>
 
 <details>
-<summary>VSCode integration (macOS/Linux)</summary>
+<summary>WSL (Windows Subsystem for Linux)</summary>
 
-Add to your `settings.json`:
+Run the bash wrapper inside your WSL shell — WSL uses the Linux wrapper, not the PowerShell one.
+
+### Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+```
+
+### 1Password desktop app integration
+
+In WSL, `op` can authenticate through the Windows 1Password desktop app instead of requiring `eval $(op signin)` on every session.
+
+**Prerequisites:**
+1. 1Password for Windows is running (check system tray)
+2. In the app: **Settings → Developer → enable both "Connect with 1Password CLI" and "Biometric unlock for 1Password CLI"**
+
+**Configure WSL:**
+
+Add to `~/.bashrc`:
+```bash
+export OP_BIOMETRIC_UNLOCK_ENABLED=true
+```
+
+Open a new terminal and verify:
+```bash
+op whoami  # should authenticate via Windows Hello/PIN — no password prompt
+```
+
+### Personal 1Password account
+
+If your API key is in a personal account (not the team account in `claude-env.sh`), add overrides to `~/.config/claude/local.env`:
+
+```bash
+OP_ACCOUNT="my"                          # shorthand for personal account (my.1password.eu)
+OP_ITEM="op://Vault/your-item-name"      # your vault item path
+```
+
+### Fallback token
+
+If 1Password integration isn't set up yet, add a static token to `~/.config/claude/local.env`. The wrapper uses it when 1Password is unavailable and automatically switches to 1Password once it's working:
+
+```bash
+ANTHROPIC_AUTH_TOKEN="your-token-here"
+```
+
+### VSCode integration
+
+When using VSCode with the Remote-WSL extension, the Claude Code extension runs inside WSL. Settings go in the **Linux-side** VSCode user config, not the Windows-side `settings.json`.
+
+Create `~/.config/Code/User/settings.json` (create if it doesn't exist):
 
 ```json
 {
   "claudeCode.environmentVariables": [
     { "name": "CLAUDE_CODE_SKIP_AUTH_LOGIN", "value": "1" }
   ],
-  "claudeCode.claudeProcessWrapper": "/Users/YOU/.local/bin/claude"
+  "claudeCode.claudeProcessWrapper": "/home/YOU/.local/bin/claude"
 }
 ```
+
+Replace `/home/YOU` with your actual home directory (`echo $HOME`).
+
+> **Note:** The Windows-side `settings.json` (`%APPDATA%\Code\User\settings.json`) will not work for WSL — `claudeCode.claudeProcessWrapper` must be a Linux path.
+
+</details>
+
+<details>
+<summary>VSCode integration (macOS/Linux)</summary>
+
+Create or edit `~/.config/Code/User/settings.json`:
+
+```json
+{
+  "claudeCode.environmentVariables": [
+    { "name": "CLAUDE_CODE_SKIP_AUTH_LOGIN", "value": "1" }
+  ],
+  "claudeCode.claudeProcessWrapper": "/home/YOU/.local/bin/claude"
+}
+```
+
+Replace `/home/YOU` with your actual home directory (`echo $HOME`). On macOS use `/Users/YOU`.
 
 </details>
