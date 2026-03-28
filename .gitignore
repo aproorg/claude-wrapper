@@ -14,5 +14,9 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Local env
+.env
+.envrc
+
 # Node
 node_modules/
