@@ -57,7 +57,10 @@ get_api_key() {
   local cache_ttl=43200 # 12 hours
 
   # Create cache dir with restrictive permissions from the start
-  (umask 077; mkdir -p "$cache_dir")
+  (
+    umask 077
+    mkdir -p "$cache_dir"
+  )
 
   # Check cache
   if [[ -s "$cache_file" ]]; then
@@ -90,7 +93,10 @@ get_api_key() {
   fi
 
   # Write cache file with restrictive permissions atomically
-  (umask 077; echo "$key" >"$cache_file.tmp.$$" && mv "$cache_file.tmp.$$" "$cache_file")
+  (
+    umask 077
+    echo "$key" >"$cache_file.tmp.$$" && mv "$cache_file.tmp.$$" "$cache_file"
+  )
 
   [[ "${CLAUDE_DEBUG:-0}" == "1" ]] && echo "key=fetched" >&2
   echo "$key"

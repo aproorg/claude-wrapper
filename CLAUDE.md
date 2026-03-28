@@ -88,6 +88,8 @@ No build step, no tests, no package.json — all scripts run directly.
 ## Active Technologies
 - Bash (4.0+, POSIX-compatible subset) and PowerShell (5.1+/7+) + `op` (1Password CLI), `curl`, `stat`, `git` (002-token-ttl-cache)
 - Flat files — `~/.cache/claude/<project>.key` (Unix), `%LOCALAPPDATA%\claude\<project>.key` (Windows) (002-token-ttl-cache)
+- Bash 4.0+ (POSIX-compatible subset), PowerShell 5.1+/7+ + `git` (already required), `op` (1Password CLI, already required) (003-auto-custom-headers)
+- N/A — environment variables only, no persistent state (003-auto-custom-headers)
 
 ## Recent Changes
 - 002-token-ttl-cache: Added Bash (4.0+, POSIX-compatible subset) and PowerShell (5.1+/7+) + `op` (1Password CLI), `curl`, `stat`, `git`
