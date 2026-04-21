@@ -88,8 +88,26 @@ if _needs_update; then
 fi
 
 # ── Source remote config (sets ANTHROPIC_* exports) ─────────────────────────
+# Preserve user-set overrides (exported via .envrc, shell, etc.) so the
+# remote config doesn't clobber them.  User env vars always win.
+_pre_model="${ANTHROPIC_MODEL:-}"
+_pre_opus="${ANTHROPIC_DEFAULT_OPUS_MODEL:-}"
+_pre_sonnet="${ANTHROPIC_DEFAULT_SONNET_MODEL:-}"
+_pre_haiku="${ANTHROPIC_DEFAULT_HAIKU_MODEL:-}"
+_pre_small="${ANTHROPIC_SMALL_FAST_MODEL:-}"
+_pre_subagent="${CLAUDE_CODE_SUBAGENT_MODEL:-}"
+
 # shellcheck disable=SC1090
 source "$_CACHE_FILE"
+
+# Restore user overrides
+[[ -n "$_pre_model" ]]    && export ANTHROPIC_MODEL="$_pre_model"
+[[ -n "$_pre_opus" ]]     && export ANTHROPIC_DEFAULT_OPUS_MODEL="$_pre_opus"
+[[ -n "$_pre_sonnet" ]]   && export ANTHROPIC_DEFAULT_SONNET_MODEL="$_pre_sonnet"
+[[ -n "$_pre_haiku" ]]    && export ANTHROPIC_DEFAULT_HAIKU_MODEL="$_pre_haiku"
+[[ -n "$_pre_small" ]]    && export ANTHROPIC_SMALL_FAST_MODEL="$_pre_small"
+[[ -n "$_pre_subagent" ]] && export CLAUDE_CODE_SUBAGENT_MODEL="$_pre_subagent"
+unset _pre_model _pre_opus _pre_sonnet _pre_haiku _pre_small _pre_subagent
 
 # ── Middleware ──────────────────────────────────────────────────────────────
 _CLAUDE_MIDDLEWARE="${XDG_CONFIG_HOME:-$HOME/.config}/claude/middleware.sh"
