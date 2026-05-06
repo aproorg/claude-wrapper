@@ -211,8 +211,18 @@ if ($apiKey) {
 # Export project
 $env:CLAUDE_PROJECT = $Project
 
+# Custom headers — auto-inject x-github-repo for LiteLLM per-repo attribution.
+# Appends to any pre-existing ANTHROPIC_CUSTOM_HEADERS (newline-separated per
+# Claude Code docs) so user-defined headers are preserved.
+$claudeHeader = "x-github-repo: $Project"
+if ($env:ANTHROPIC_CUSTOM_HEADERS) {
+    $env:ANTHROPIC_CUSTOM_HEADERS = "$($env:ANTHROPIC_CUSTOM_HEADERS)`n$claudeHeader"
+} else {
+    $env:ANTHROPIC_CUSTOM_HEADERS = $claudeHeader
+}
+
 if ($env:CLAUDE_DEBUG -eq "1") {
-    Write-Host "Claude: project=$Project base=$LiteLLM_BaseURL model=$($env:ANTHROPIC_MODEL)" -ForegroundColor Cyan
+    Write-Host "Claude: project=$Project base=$LiteLLM_BaseURL model=$($env:ANTHROPIC_MODEL) headers=$($env:ANTHROPIC_CUSTOM_HEADERS)" -ForegroundColor Cyan
 }
 
 # Launch Claude Code (pass through any arguments)
