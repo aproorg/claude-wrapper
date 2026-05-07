@@ -85,8 +85,10 @@ There's no automated test suite — verify the full install-to-launch path manua
 **1. Clean slate**
 
 ```bash
-# Back up your current wrapper, then remove it along with all caches
-cp ~/.local/bin/claude ~/.local/bin/claude.bak
+# Back up your current wrapper, then remove it along with all caches.
+# Use `cp -P` to preserve the symlink — plain `cp` dereferences it and
+# step 9's restore would replace your dev symlink with a static byte copy.
+cp -P ~/.local/bin/claude ~/.local/bin/claude.bak
 rm -f ~/.local/bin/claude
 rm -f ~/.cache/claude/env-remote.sh ~/.cache/claude/*.key
 
@@ -117,7 +119,14 @@ CLAUDE_DEBUG=1 claude --version
 
 **5. Test empty-file guard**
 
+Run this *inside the repo whose project key you want to clear* (the command
+derives the project name from the current `git remote`). Also unset
+`CLAUDE_PROJECT` first — if it's set in your environment (e.g. via direnv
+or a parent shell), it overrides the git-based detection and the empty-file
+guard won't be exercised.
+
 ```bash
+unset CLAUDE_PROJECT
 : > ~/.cache/claude/$(basename $(git remote get-url origin 2>/dev/null | sed 's/.*\///;s/\.git$//')).key
 CLAUDE_DEBUG=1 claude --version
 # Expected: key=fetched (empty cache file treated as miss)
@@ -158,7 +167,7 @@ mv ~/.local/bin/claude.bak ~/.local/bin/claude
 |------|---------------|
 | Install | Wrapper, `local.env`, and cached remote config all written |
 | `which claude` | Resolves to `~/.local/bin/claude`, not the real binary |
-| Debug output | `key=fetched` or `key=cached`, correct project, base URL, and model |
+| Debug output | `key=fetched` or `key=cached`, correct project, base URL, model, and `headers=x-github-repo: <project>` |
 | Cache hit | Second run shows `key=cached`, no 1Password prompt |
 | Empty-file guard | Empty `.key` file treated as cache miss (`key=fetched`) |
 | Cache re-fetch | Re-fetches after deleting `env-remote.sh` |
