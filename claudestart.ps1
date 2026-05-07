@@ -22,7 +22,7 @@ $ConfigTTL_Seconds = 300   # 5 minutes for remote config
 # ============================================================================
 # Cache directory
 # ============================================================================
-$CacheDir = Join-Path $(if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $env:USERPROFILE "AppData\Local" }) "claude"
+$CacheDir = "$env:LOCALAPPDATA\claude"
 if (-not (Test-Path $CacheDir)) {
     New-Item -ItemType Directory -Path $CacheDir -Force | Out-Null
 }
@@ -90,7 +90,7 @@ if (Test-Path $_RemoteCache) {
 Remove-Variable _RemoteUrl, _RemoteCache, _NeedsFetch, _Age, _tmp, _content, _StaleAge, _line -ErrorAction SilentlyContinue
 
 # ── Local overrides (from local.env written by install.js) ───────────────────
-$_LocalEnvPath = Join-Path $(if ($env:APPDATA) { $env:APPDATA } else { Join-Path $env:USERPROFILE "AppData\Roaming" }) "claude\local.env"
+$_LocalEnvPath = "$env:APPDATA\claude\local.env"
 if (Test-Path $_LocalEnvPath) {
     foreach ($line in Get-Content $_LocalEnvPath) {
         if ($line -match '^(LITELLM_BASE_URL|OP_ITEM)="(.*)"') {
