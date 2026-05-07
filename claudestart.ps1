@@ -57,7 +57,7 @@ if ($_NeedsFetch) {
         # Integrity check: reject dangerous patterns
         $_content = Get-Content $_tmp -Raw
         if ($_content -match '(rm\s+-rf\s+/|curl.*\|\s*(ba)?sh|eval\s)') {
-            Write-Host "ERROR: Remote config failed integrity check" -ForegroundColor Red
+            [Console]::Error.WriteLine("ERROR: Remote config failed integrity check")
             Remove-Item $_tmp -Force -ErrorAction SilentlyContinue
             exit 1
         }
@@ -65,7 +65,7 @@ if ($_NeedsFetch) {
     } catch {
         Remove-Item "$_RemoteCache.tmp.$PID" -Force -ErrorAction SilentlyContinue
         if (-not (Test-Path $_RemoteCache)) {
-            Write-Host "ERROR: Cannot fetch config from $_RemoteUrl (no cache)" -ForegroundColor Red
+            [Console]::Error.WriteLine("ERROR: Cannot fetch config from $_RemoteUrl (no cache)")
             exit 1
         }
         if ($env:CLAUDE_DEBUG -eq "1") {
