@@ -292,7 +292,7 @@ echo 'export PATH="/opt/my-tools/bin:$PATH"' > ~/.config/claude/middleware.sh
 ### Install
 
 ```powershell
-curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+irm https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
 ```
 
 The installer:
@@ -327,7 +327,10 @@ claudestart --clear-cache
 Remove-Item "$env:LOCALAPPDATA\claude\env-remote.sh"
 
 # Re-run installer to update local settings
-curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+irm https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+
+# Force reinstall wrapper (e.g. to pick up updates to claudestart.ps1)
+$env:CLAUDE_FORCE = "1"; irm https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
 
 # Debug mode
 $env:CLAUDE_DEBUG = "1"; claudestart
