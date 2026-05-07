@@ -22,7 +22,7 @@ $ConfigTTL_Seconds = 300   # 5 minutes for remote config
 # ============================================================================
 # Cache directory
 # ============================================================================
-$CacheDir = Join-Path ($env:LOCALAPPDATA ?? (Join-Path $env:USERPROFILE "AppData\Local")) "claude"
+$CacheDir = "$env:LOCALAPPDATA\claude"
 if (-not (Test-Path $CacheDir)) {
     New-Item -ItemType Directory -Path $CacheDir -Force | Out-Null
 }
@@ -57,7 +57,7 @@ if ($_NeedsFetch) {
         # Integrity check: reject dangerous patterns
         $_content = Get-Content $_tmp -Raw
         if ($_content -match '(rm\s+-rf\s+/|curl.*\|\s*(ba)?sh|eval\s)') {
-            Write-Host "ERROR: Remote config failed integrity check" -ForegroundColor Red
+            [Console]::Error.WriteLine("ERROR: Remote config failed integrity check")
             Remove-Item $_tmp -Force -ErrorAction SilentlyContinue
             exit 1
         }
@@ -65,12 +65,12 @@ if ($_NeedsFetch) {
     } catch {
         Remove-Item "$_RemoteCache.tmp.$PID" -Force -ErrorAction SilentlyContinue
         if (-not (Test-Path $_RemoteCache)) {
-            Write-Host "ERROR: Cannot fetch config from $_RemoteUrl (no cache)" -ForegroundColor Red
+            [Console]::Error.WriteLine("ERROR: Cannot fetch config from $_RemoteUrl (no cache)")
             exit 1
         }
         if ($env:CLAUDE_DEBUG -eq "1") {
             $_StaleAge = [int]((Get-Date) - (Get-Item $_RemoteCache).LastWriteTime).TotalSeconds
-            Write-Host "Warning: Using stale cached config (${_StaleAge}s old, fetch failed)" -ForegroundColor Yellow
+            [Console]::Error.WriteLine("Warning: Using stale cached config (${_StaleAge}s old, fetch failed)")
         }
     }
 }
@@ -90,7 +90,7 @@ if (Test-Path $_RemoteCache) {
 Remove-Variable _RemoteUrl, _RemoteCache, _NeedsFetch, _Age, _tmp, _content, _StaleAge, _line -ErrorAction SilentlyContinue
 
 # ── Local overrides (from local.env written by install.js) ───────────────────
-$_LocalEnvPath = Join-Path ($env:APPDATA ?? (Join-Path $env:USERPROFILE "AppData\Roaming")) "claude\local.env"
+$_LocalEnvPath = "$env:APPDATA\claude\local.env"
 if (Test-Path $_LocalEnvPath) {
     foreach ($line in Get-Content $_LocalEnvPath) {
         if ($line -match '^(LITELLM_BASE_URL|OP_ITEM)="(.*)"') {
@@ -147,7 +147,7 @@ function Get-ApiKey {
     if ((Test-Path $cacheFile) -and (Get-Item $cacheFile).Length -gt 0) {
         $age = (Get-Date) - (Get-Item $cacheFile).LastWriteTime
         if ($age.TotalSeconds -lt $CacheTTL_Seconds) {
-            if ($env:CLAUDE_DEBUG -eq "1") { Write-Host "key=cached" -ForegroundColor Cyan }
+            if ($env:CLAUDE_DEBUG -eq "1") { [Console]::Error.WriteLine("key=cached") }
             return (Get-Content $cacheFile -Raw).Trim()
         }
     }
@@ -166,12 +166,12 @@ function Get-ApiKey {
         } catch {}
 
         if ($key -and $env:CLAUDE_DEBUG -eq "1") {
-            Write-Host "Note: No key for project '$Project', using default" -ForegroundColor Yellow
+            [Console]::Error.WriteLine("Note: No key for project '$Project', using default")
         }
     }
 
     if (-not $key) {
-        Write-Host "ERROR: Failed to retrieve API key from 1Password" -ForegroundColor Red
+        [Console]::Error.WriteLine("ERROR: Failed to retrieve API key from 1Password")
         return $null
     }
 
@@ -180,7 +180,7 @@ function Get-ApiKey {
     $key | Out-File -FilePath $tmpFile -NoNewline -Encoding UTF8
     Move-Item $tmpFile $cacheFile -Force
 
-    if ($env:CLAUDE_DEBUG -eq "1") { Write-Host "key=fetched" -ForegroundColor Cyan }
+    if ($env:CLAUDE_DEBUG -eq "1") { [Console]::Error.WriteLine("key=fetched") }
     return $key
 }
 
@@ -205,14 +205,24 @@ $apiKey = Get-ApiKey -Project $Project
 if ($apiKey) {
     $env:ANTHROPIC_AUTH_TOKEN = $apiKey
 } else {
-    Write-Host "Warning: Could not retrieve Claude API key" -ForegroundColor Yellow
+    [Console]::Error.WriteLine("Warning: Could not retrieve Claude API key")
 }
 
 # Export project
 $env:CLAUDE_PROJECT = $Project
 
+# Custom headers — auto-inject x-github-repo for LiteLLM per-repo attribution.
+# Appends to any pre-existing ANTHROPIC_CUSTOM_HEADERS (newline-separated per
+# Claude Code docs) so user-defined headers are preserved.
+$claudeHeader = "x-github-repo: $Project"
+if ($env:ANTHROPIC_CUSTOM_HEADERS) {
+    $env:ANTHROPIC_CUSTOM_HEADERS = "$($env:ANTHROPIC_CUSTOM_HEADERS)`n$claudeHeader"
+} else {
+    $env:ANTHROPIC_CUSTOM_HEADERS = $claudeHeader
+}
+
 if ($env:CLAUDE_DEBUG -eq "1") {
-    Write-Host "Claude: project=$Project base=$LiteLLM_BaseURL model=$($env:ANTHROPIC_MODEL)" -ForegroundColor Cyan
+    [Console]::Error.WriteLine("Claude: project=$Project base=$LiteLLM_BaseURL model=$($env:ANTHROPIC_MODEL) headers=$($env:ANTHROPIC_CUSTOM_HEADERS)")
 }
 
 # Launch Claude Code (pass through any arguments)

@@ -57,6 +57,7 @@ No build step, no tests, no package.json — all scripts run directly.
 | `CLAUDE_PROJECT` | (auto from git remote) | Override project name for key lookup |
 | `CLAUDE_DEBUG` | `0` | Show resolved config on launch |
 | `CLAUDE_FORCE` | `0` | Installer: overwrite existing env.sh without prompting |
+| `ANTHROPIC_CUSTOM_HEADERS` | (auto-set) | Auto-injected `x-github-repo: ${CLAUDE_PROJECT}` for LiteLLM per-repo attribution. Pre-existing values are preserved (header appended on a new line). |
 
 **Runtime files (not in repo):**
 

@@ -88,8 +88,26 @@ if _needs_update; then
 fi
 
 # ── Source remote config (sets ANTHROPIC_* exports) ─────────────────────────
+# Save user-set overrides (from .envrc / project .env) before remote config
+# clobbers them.  User env vars always win over remote defaults.
+_pre_model="${ANTHROPIC_MODEL:-}"
+_pre_opus="${ANTHROPIC_DEFAULT_OPUS_MODEL:-}"
+_pre_sonnet="${ANTHROPIC_DEFAULT_SONNET_MODEL:-}"
+_pre_haiku="${ANTHROPIC_DEFAULT_HAIKU_MODEL:-}"
+_pre_small="${ANTHROPIC_SMALL_FAST_MODEL:-}"
+_pre_subagent="${CLAUDE_CODE_SUBAGENT_MODEL:-}"
+
 # shellcheck disable=SC1090
 source "$_CACHE_FILE"
+
+# Restore — user env vars win over remote defaults
+[[ -n "$_pre_model" ]]    && export ANTHROPIC_MODEL="$_pre_model"
+[[ -n "$_pre_opus" ]]     && export ANTHROPIC_DEFAULT_OPUS_MODEL="$_pre_opus"
+[[ -n "$_pre_sonnet" ]]   && export ANTHROPIC_DEFAULT_SONNET_MODEL="$_pre_sonnet"
+[[ -n "$_pre_haiku" ]]    && export ANTHROPIC_DEFAULT_HAIKU_MODEL="$_pre_haiku"
+[[ -n "$_pre_small" ]]    && export ANTHROPIC_SMALL_FAST_MODEL="$_pre_small"
+[[ -n "$_pre_subagent" ]] && export CLAUDE_CODE_SUBAGENT_MODEL="$_pre_subagent"
+unset _pre_model _pre_opus _pre_sonnet _pre_haiku _pre_small _pre_subagent
 
 # ── Middleware ──────────────────────────────────────────────────────────────
 _CLAUDE_MIDDLEWARE="${XDG_CONFIG_HOME:-$HOME/.config}/claude/middleware.sh"
@@ -102,6 +120,12 @@ if [[ -f "$_CLAUDE_MIDDLEWARE" ]]; then
   fi
 fi
 unset _CLAUDE_MIDDLEWARE
+
+# ── Terminal color support ──────────────────────────────────────────────────
+# Claude Code's TUI detects color support at module load time, before
+# settings.json env vars are applied. Ensure FORCE_COLOR is inherited
+# from the process environment so the Ink/React TUI renders correctly.
+export FORCE_COLOR="${FORCE_COLOR:-3}"
 
 # ── Launch ─────────────────────────────────────────────────────────────────
 exec "$CLAUDE_BIN" "$@"

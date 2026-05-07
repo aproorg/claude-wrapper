@@ -141,6 +141,19 @@ fi
 # Export project for debugging
 export CLAUDE_PROJECT
 
+# Custom headers — auto-inject x-github-repo for LiteLLM per-repo attribution.
+# Appends to any pre-existing ANTHROPIC_CUSTOM_HEADERS (newline-separated per
+# Claude Code docs) so user-defined headers from local.env or middleware.sh
+# are preserved.
+_CLAUDE_HEADER="x-github-repo: ${CLAUDE_PROJECT}"
+if [[ -n "${ANTHROPIC_CUSTOM_HEADERS:-}" ]]; then
+  export ANTHROPIC_CUSTOM_HEADERS="${ANTHROPIC_CUSTOM_HEADERS}
+${_CLAUDE_HEADER}"
+else
+  export ANTHROPIC_CUSTOM_HEADERS="${_CLAUDE_HEADER}"
+fi
+unset _CLAUDE_HEADER
+
 if [[ "${CLAUDE_DEBUG:-0}" == "1" ]]; then
-  echo "Claude: project=$CLAUDE_PROJECT base=$LITELLM_BASE_URL model=$ANTHROPIC_MODEL" >&2
+  echo "Claude: project=$CLAUDE_PROJECT base=$LITELLM_BASE_URL model=$ANTHROPIC_MODEL headers=$ANTHROPIC_CUSTOM_HEADERS" >&2
 fi

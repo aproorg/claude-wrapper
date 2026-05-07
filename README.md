@@ -2,7 +2,7 @@
 
 Route Claude Code through a [LiteLLM](https://docs.litellm.ai/) proxy with automatic API key management via [1Password CLI](https://developer.1password.com/docs/cli/).
 
-Use this when your team runs a shared LiteLLM gateway and stores API keys in 1Password. The wrapper handles config distribution, per-project key rotation, and keeps developer machines in sync — no manual env vars to manage.
+Use this when your team runs a shared LiteLLM gateway and stores API keys in 1Password. The wrapper handles config distribution, per-project key rotation, per-repo usage attribution, and keeps developer machines in sync — no manual env vars to manage.
 
 ## Install
 
@@ -85,8 +85,10 @@ There's no automated test suite — verify the full install-to-launch path manua
 **1. Clean slate**
 
 ```bash
-# Back up your current wrapper, then remove it along with all caches
-cp ~/.local/bin/claude ~/.local/bin/claude.bak
+# Back up your current wrapper, then remove it along with all caches.
+# Use `cp -P` to preserve the symlink — plain `cp` dereferences it and
+# step 9's restore would replace your dev symlink with a static byte copy.
+cp -P ~/.local/bin/claude ~/.local/bin/claude.bak
 rm -f ~/.local/bin/claude
 rm -f ~/.cache/claude/env-remote.sh ~/.cache/claude/*.key
 
@@ -117,7 +119,14 @@ CLAUDE_DEBUG=1 claude --version
 
 **5. Test empty-file guard**
 
+Run this *inside the repo whose project key you want to clear* (the command
+derives the project name from the current `git remote`). Also unset
+`CLAUDE_PROJECT` first — if it's set in your environment (e.g. via direnv
+or a parent shell), it overrides the git-based detection and the empty-file
+guard won't be exercised.
+
 ```bash
+unset CLAUDE_PROJECT
 : > ~/.cache/claude/$(basename $(git remote get-url origin 2>/dev/null | sed 's/.*\///;s/\.git$//')).key
 CLAUDE_DEBUG=1 claude --version
 # Expected: key=fetched (empty cache file treated as miss)
@@ -158,7 +167,7 @@ mv ~/.local/bin/claude.bak ~/.local/bin/claude
 |------|---------------|
 | Install | Wrapper, `local.env`, and cached remote config all written |
 | `which claude` | Resolves to `~/.local/bin/claude`, not the real binary |
-| Debug output | `key=fetched` or `key=cached`, correct project, base URL, and model |
+| Debug output | `key=fetched` or `key=cached`, correct project, base URL, model, and `headers=x-github-repo: <project>` |
 | Cache hit | Second run shows `key=cached`, no 1Password prompt |
 | Empty-file guard | Empty `.key` file treated as cache miss (`key=fetched`) |
 | Cache re-fetch | Re-fetches after deleting `env-remote.sh` |
@@ -177,7 +186,7 @@ The installer writes a process wrapper to `~/.local/bin/claude` that shadows the
 
 1. Finds the real binary (portable PATH iteration, skipping itself)
 2. Fetches the latest team config from this repo, validates it against an integrity check, caches it for 5 minutes, falls back to stale cache on network failure
-3. Sources the config to set `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, model defaults, and per-project API keys
+3. Sources the config to set `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, model defaults, per-project API keys, and `ANTHROPIC_CUSTOM_HEADERS` (auto-injects `x-github-repo: <project>` for LiteLLM per-repo attribution)
 4. Optionally sources `~/.config/claude/middleware.sh` for custom pre-launch hooks (errors are trapped with actionable messages)
 5. `exec`s the real Claude Code with all original arguments
 
@@ -202,6 +211,24 @@ Override project detection: `CLAUDE_PROJECT=my-project claude`
 </details>
 
 <details>
+<summary>Per-repo attribution (x-github-repo header)</summary>
+
+Every request to the LiteLLM gateway is automatically tagged with an `x-github-repo: <project>` header so the gateway can attribute usage, spend, and rate-limits per repository — zero developer setup.
+
+The value comes from the same project-detection logic used for API key lookup (`CLAUDE_PROJECT`), so a request from `~/code/your-org/backend-api` is tagged `x-github-repo: backend-api`.
+
+If you've already set `ANTHROPIC_CUSTOM_HEADERS` (via `local.env`, shell environment, or `middleware.sh`), the auto-injected header is **appended on a new line** so your custom headers are preserved:
+
+```
+x-team: platform
+x-github-repo: backend-api
+```
+
+To suppress the header on a specific project (rare — e.g., experimental scratch work you don't want attributed), strip it in your personal `~/.config/claude/middleware.sh`. The team config does not provide a built-in opt-out.
+
+</details>
+
+<details>
 <summary>Configuration</summary>
 
 | Variable | Default | Description |
@@ -211,6 +238,7 @@ Override project detection: `CLAUDE_PROJECT=my-project claude`
 | `CLAUDE_MODEL` | `claude-opus-4-6` | Override default model |
 | `CLAUDE_PROJECT` | (auto-detected) | Override project name |
 | `CLAUDE_DEBUG` | `0` | Enable debug output |
+| `ANTHROPIC_CUSTOM_HEADERS` | (auto-set) | Auto-injected `x-github-repo: $CLAUDE_PROJECT`. Pre-existing values preserved (header appended on new line). |
 
 **Files:**
 
@@ -264,7 +292,7 @@ echo 'export PATH="/opt/my-tools/bin:$PATH"' > ~/.config/claude/middleware.sh
 ### Install
 
 ```powershell
-curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+irm https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
 ```
 
 The installer:
@@ -299,7 +327,10 @@ claudestart --clear-cache
 Remove-Item "$env:LOCALAPPDATA\claude\env-remote.sh"
 
 # Re-run installer to update local settings
-curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+irm https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+
+# Force reinstall wrapper (e.g. to pick up updates to claudestart.ps1)
+$env:CLAUDE_FORCE = "1"; irm https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
 
 # Debug mode
 $env:CLAUDE_DEBUG = "1"; claudestart
