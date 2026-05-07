@@ -70,7 +70,7 @@ if ($_NeedsFetch) {
         }
         if ($env:CLAUDE_DEBUG -eq "1") {
             $_StaleAge = [int]((Get-Date) - (Get-Item $_RemoteCache).LastWriteTime).TotalSeconds
-            Write-Host "Warning: Using stale cached config (${_StaleAge}s old, fetch failed)" -ForegroundColor Yellow
+            [Console]::Error.WriteLine("Warning: Using stale cached config (${_StaleAge}s old, fetch failed)")
         }
     }
 }
@@ -147,7 +147,7 @@ function Get-ApiKey {
     if ((Test-Path $cacheFile) -and (Get-Item $cacheFile).Length -gt 0) {
         $age = (Get-Date) - (Get-Item $cacheFile).LastWriteTime
         if ($age.TotalSeconds -lt $CacheTTL_Seconds) {
-            if ($env:CLAUDE_DEBUG -eq "1") { Write-Host "key=cached" -ForegroundColor Cyan }
+            if ($env:CLAUDE_DEBUG -eq "1") { [Console]::Error.WriteLine("key=cached") }
             return (Get-Content $cacheFile -Raw).Trim()
         }
     }
@@ -166,12 +166,12 @@ function Get-ApiKey {
         } catch {}
 
         if ($key -and $env:CLAUDE_DEBUG -eq "1") {
-            Write-Host "Note: No key for project '$Project', using default" -ForegroundColor Yellow
+            [Console]::Error.WriteLine("Note: No key for project '$Project', using default")
         }
     }
 
     if (-not $key) {
-        Write-Host "ERROR: Failed to retrieve API key from 1Password" -ForegroundColor Red
+        [Console]::Error.WriteLine("ERROR: Failed to retrieve API key from 1Password")
         return $null
     }
 
@@ -180,7 +180,7 @@ function Get-ApiKey {
     $key | Out-File -FilePath $tmpFile -NoNewline -Encoding UTF8
     Move-Item $tmpFile $cacheFile -Force
 
-    if ($env:CLAUDE_DEBUG -eq "1") { Write-Host "key=fetched" -ForegroundColor Cyan }
+    if ($env:CLAUDE_DEBUG -eq "1") { [Console]::Error.WriteLine("key=fetched") }
     return $key
 }
 
@@ -205,7 +205,7 @@ $apiKey = Get-ApiKey -Project $Project
 if ($apiKey) {
     $env:ANTHROPIC_AUTH_TOKEN = $apiKey
 } else {
-    Write-Host "Warning: Could not retrieve Claude API key" -ForegroundColor Yellow
+    [Console]::Error.WriteLine("Warning: Could not retrieve Claude API key")
 }
 
 # Export project
@@ -222,7 +222,7 @@ if ($env:ANTHROPIC_CUSTOM_HEADERS) {
 }
 
 if ($env:CLAUDE_DEBUG -eq "1") {
-    Write-Host "Claude: project=$Project base=$LiteLLM_BaseURL model=$($env:ANTHROPIC_MODEL) headers=$($env:ANTHROPIC_CUSTOM_HEADERS)" -ForegroundColor Cyan
+    [Console]::Error.WriteLine("Claude: project=$Project base=$LiteLLM_BaseURL model=$($env:ANTHROPIC_MODEL) headers=$($env:ANTHROPIC_CUSTOM_HEADERS)")
 }
 
 # Launch Claude Code (pass through any arguments)
