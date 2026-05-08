@@ -157,14 +157,18 @@ backup_existing() {
   fi
 }
 
-# ── Detect other claude-wrappers on PATH ────────────────────────────────────
+# ── Remove other claude-wrappers on PATH ────────────────────────────────────
 # A second wrapper earlier on PATH will be invoked first when the user types
 # `claude`. If it's an older version with stale config (different OP_ITEM, old
 # remote URL, etc.), it'll print error messages on every launch even though
 # claude eventually works because it exec's into the next claude on PATH.
 # Real claude binaries don't reference CLAUDE_ENV_REMOTE_URL, so that string
 # is a reliable signature for our wrappers (current or legacy).
-detect_other_wrappers() {
+#
+# Default behavior: prompt the user to remove each one (default Y). With
+# CLAUDE_FORCE=1, remove without prompting. Each removed wrapper is backed
+# up next to itself with a .legacy.backup.<timestamp> suffix.
+remove_other_wrappers() {
   local IFS=:
   local found=()
   local self
@@ -177,18 +181,43 @@ detect_other_wrappers() {
       found+=("$candidate")
     fi
   done
-  if [[ ${#found[@]} -gt 0 ]]; then
-    echo >&2
-    warn "Found other claude-wrapper installs on PATH:"
-    for f in "${found[@]}"; do
-      warn "  $f"
-    done
-    warn "These will be invoked instead of (or before) $WRAPPER_PATH and may"
-    warn "print spurious 1Password / config errors. Remove them with:"
-    for f in "${found[@]}"; do
-      warn "  rm $f"
-    done
-  fi
+  [[ ${#found[@]} -eq 0 ]] && return 0
+
+  echo >&2
+  warn "Found other claude-wrapper installs on PATH that will take precedence"
+  warn "over $WRAPPER_PATH. They print spurious 1Password / config errors on"
+  warn "every launch even though claude itself works (because they exec into"
+  warn "the next claude on PATH)."
+  echo >&2
+
+  local f
+  for f in "${found[@]}"; do
+    local should_remove=""
+    if [[ "${CLAUDE_FORCE:-0}" == "1" ]]; then
+      should_remove="y"
+    elif { exec 3<>/dev/tty; } 2>/dev/null; then
+      printf "  Remove legacy wrapper at %s? [Y/n]: " "$f" >&3
+      IFS= read -r should_remove <&3 || should_remove=""
+      exec 3<&-
+    else
+      # No TTY and no CLAUDE_FORCE — leave it alone with explicit instructions.
+      warn "Skipping $f (no TTY, set CLAUDE_FORCE=1 to auto-remove)"
+      warn "  Manual: rm $f"
+      continue
+    fi
+
+    if [[ -z "$should_remove" || "$should_remove" =~ ^[Yy] ]]; then
+      local backup="$f.legacy.backup.$(date +%s)"
+      cp -P "$f" "$backup" 2>/dev/null || true
+      if rm -f "$f"; then
+        ok "Removed $f (backup: $backup)"
+      else
+        warn "Could not remove $f — may need sudo. Manual: sudo rm $f"
+      fi
+    else
+      warn "Kept $f — claude will continue to invoke it instead of $WRAPPER_PATH"
+    fi
+  done
 }
 
 # Portable realpath (macOS lacks readlink -f). Mirrors the wrapper's helper.
@@ -245,7 +274,7 @@ main() {
 
   prompt_local_config
 
-  detect_other_wrappers
+  remove_other_wrappers
 
   echo >&2
   ok "Installation complete!"
