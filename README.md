@@ -31,6 +31,17 @@ which claude           # Should show ~/.local/bin/claude
 CLAUDE_DEBUG=1 claude  # Shows resolved config
 ```
 
+## Testing a development branch
+
+When testing a PR or unmerged branch, **you must `export` `CLAUDE_ENV_URL`** before running the installer. Inline `VAR=val curl ... | bash` doesn't work — env-var prefixes only set the var for the immediately-following command (`curl`), not for the `bash` subshell that runs the install script. Without the export, the installer silently falls back to `main` and downloads sibling files (the wrapper, claude-env.sh) from there.
+
+```bash
+export CLAUDE_ENV_URL="https://raw.githubusercontent.com/aproorg/claude-wrapper/<branch-name>/claude-env.sh"
+curl -fsSL "https://raw.githubusercontent.com/aproorg/claude-wrapper/<branch-name>/install.sh" | bash
+```
+
+Verify the install came from the branch by checking the `[INFO] Source:` line. The installer also patches the installed wrapper so subsequent `claude` launches keep fetching from that branch.
+
 ## Prerequisites
 
 - **Claude Code** installed (Homebrew, npm, or standalone)
@@ -316,6 +327,19 @@ Get-Command claudestart           # Should show the .cmd shim
 $env:CLAUDE_DEBUG = "1"; claudestart  # Shows resolved config
 ```
 
+### Testing a development branch
+
+When testing a PR or unmerged branch, you **must** set `$env:CLAUDE_ENV_URL` to the branch's `claude-env.sh` URL *before* running the installer. Without it, the installer falls back to `main` and downloads sibling files (including `claudestart.ps1`) from there — which is almost certainly not what you want when testing a branch.
+
+```powershell
+$base = "https://raw.githubusercontent.com/aproorg/claude-wrapper/<branch-name>"
+$env:CLAUDE_ENV_URL = "$base/claude-env.sh"
+$env:CLAUDE_FORCE = "1"  # overwrite existing wrapper without backup
+irm "$base/install.ps1" | iex
+```
+
+Verify the install came from the branch by checking the `[INFO] Source:` line — it should reference your branch, not `main`. The installer also patches the installed `claudestart.ps1` so subsequent launches keep fetching from that branch.
+
 ### Prerequisites
 
 - **Claude Code** installed (npm global install or standalone)
@@ -346,8 +370,8 @@ $env:CLAUDE_DEBUG = "1"; claudestart
 
 | File | Purpose |
 |------|---------|
-| `%LOCALAPPDATA%\claude\bin\claudestart.ps1` | PowerShell wrapper |
-| `%LOCALAPPDATA%\claude\bin\claudestart.cmd` | CMD shim |
+| `%LOCALAPPDATA%\Programs\claude-wrapper\claudestart.ps1` | PowerShell wrapper |
+| `%LOCALAPPDATA%\Programs\claude-wrapper\claudestart.cmd` | CMD shim |
 | `%LOCALAPPDATA%\claude\env-remote.sh` | Cached remote config |
 | `%APPDATA%\claude\local.env` | Your local overrides |
 | `%LOCALAPPDATA%\claude\<project>.key` | Cached API keys (12h TTL) |
