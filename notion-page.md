@@ -8,21 +8,28 @@ Use this when your team runs a shared LiteLLM gateway and stores API keys in 1Pa
 
 # Install
 
+**macOS / Linux / WSL:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.sh | bash
 ```
 
-The installer prompts for your **LiteLLM base URL** and **1Password item** reference. Values are stored in `~/.config/claude/local.env` and persist across updates.
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.ps1 | iex
+```
+
+The installer prompts for your **LiteLLM base URL** and **1Password item** reference. Values are stored in `~/.config/claude/local.env` (`%APPDATA%\claude\local.env` on Windows) and persist across updates.
 
 > **Non-interactive mode:** When piped without a TTY (CI, Docker), prompts are skipped and defaults are used silently.
 
 ## Verify
 
 ```bash
+which claude           # Should show ~/.local/bin/claude
 CLAUDE_DEBUG=1 claude  # Shows resolved config
 ```
 
-`which claude` still points to your original Claude binary. This is expected — the installer writes `~/.config/claude/env.sh`, which Claude Code [sources automatically on startup](https://docs.anthropic.com/en/docs/claude-code/settings). No wrapper or PATH changes needed.
+The wrapper at `~/.local/bin/claude` shadows the real binary, sources team config, then `exec`s the real claude. On Windows the command is `claudestart` (not `claude`) — Windows can't shadow `.exe` files with a script.
 
 ## Prerequisites
 
@@ -89,7 +96,7 @@ The installer stores your LiteLLM URL and 1Password item in `~/.config/claude/lo
 cat ~/.config/claude/local.env
 
 # Re-run installer to change values (shows current as defaults)
-node install.js
+curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.sh | bash
 ```
 
 The file uses simple `KEY="VALUE"` format and has `0600` permissions.
@@ -103,7 +110,7 @@ The file uses simple `KEY="VALUE"` format and has `0600` permissions.
 rm ~/.cache/claude/env-remote.sh
 
 # Re-run installer to update local settings
-node install.js
+curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.sh | bash
 
 # Debug mode
 CLAUDE_DEBUG=1 claude

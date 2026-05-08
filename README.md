@@ -6,8 +6,14 @@ Use this when your team runs a shared LiteLLM gateway and stores API keys in 1Pa
 
 ## Install
 
+**macOS / Linux / WSL:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.ps1 | iex
 ```
 
 The installer:
@@ -54,7 +60,7 @@ claude --clear-cache
 rm ~/.cache/claude/env-remote.sh
 
 # Re-run installer to update local settings
-curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.sh | bash
 
 # Debug mode (shows resolved config + stale cache warnings)
 CLAUDE_DEBUG=1 claude
@@ -99,7 +105,7 @@ which claude  # should show /opt/homebrew/bin/claude (or wherever yours lives)
 **2. Install via curl**
 
 ```bash
-CLAUDE_FORCE=1 curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+CLAUDE_FORCE=1 curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.sh | bash
 ```
 
 **3. Verify the wrapper shadows the real binary**
@@ -261,7 +267,7 @@ The installer stores your LiteLLM URL and 1Password item in `~/.config/claude/lo
 cat ~/.config/claude/local.env
 
 # Re-run installer to change values (shows current as defaults)
-curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.sh | bash
 ```
 
 The file uses simple `KEY="VALUE"` format and has `0600` permissions.
@@ -292,11 +298,11 @@ echo 'export PATH="/opt/my-tools/bin:$PATH"' > ~/.config/claude/middleware.sh
 ### Install
 
 ```powershell
-irm https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+irm https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.ps1 | iex
 ```
 
 The installer:
-1. Downloads `claudestart.ps1` to `%LOCALAPPDATA%\claude\bin\`
+1. Downloads `claudestart.ps1` to `%LOCALAPPDATA%\Programs\claude-wrapper\`
 2. Creates a `claudestart.cmd` shim so it works from `cmd.exe` too
 3. Adds the install directory to your user PATH
 4. Prompts for your **LiteLLM base URL** and **1Password item** reference
@@ -327,10 +333,10 @@ claudestart --clear-cache
 Remove-Item "$env:LOCALAPPDATA\claude\env-remote.sh"
 
 # Re-run installer to update local settings
-irm https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+irm https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.ps1 | iex
 
 # Force reinstall wrapper (e.g. to pick up updates to claudestart.ps1)
-$env:CLAUDE_FORCE = "1"; irm https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.js | node
+$env:CLAUDE_FORCE = "1"; irm https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.ps1 | iex
 
 # Debug mode
 $env:CLAUDE_DEBUG = "1"; claudestart
