@@ -157,6 +157,53 @@ backup_existing() {
   fi
 }
 
+# ── Detect other claude-wrappers on PATH ────────────────────────────────────
+# A second wrapper earlier on PATH will be invoked first when the user types
+# `claude`. If it's an older version with stale config (different OP_ITEM, old
+# remote URL, etc.), it'll print error messages on every launch even though
+# claude eventually works because it exec's into the next claude on PATH.
+# Real claude binaries don't reference CLAUDE_ENV_REMOTE_URL, so that string
+# is a reliable signature for our wrappers (current or legacy).
+detect_other_wrappers() {
+  local IFS=:
+  local found=()
+  local self
+  self=$(_realpath "$WRAPPER_PATH" 2>/dev/null || echo "")
+  for dir in $PATH; do
+    local candidate="$dir/claude"
+    [[ -f "$candidate" && -x "$candidate" ]] || continue
+    [[ "$(_realpath "$candidate" 2>/dev/null)" == "$self" ]] && continue
+    if grep -q "CLAUDE_ENV_REMOTE_URL=" "$candidate" 2>/dev/null; then
+      found+=("$candidate")
+    fi
+  done
+  if [[ ${#found[@]} -gt 0 ]]; then
+    echo >&2
+    warn "Found other claude-wrapper installs on PATH:"
+    for f in "${found[@]}"; do
+      warn "  $f"
+    done
+    warn "These will be invoked instead of (or before) $WRAPPER_PATH and may"
+    warn "print spurious 1Password / config errors. Remove them with:"
+    for f in "${found[@]}"; do
+      warn "  rm $f"
+    done
+  fi
+}
+
+# Portable realpath (macOS lacks readlink -f). Mirrors the wrapper's helper.
+_realpath() {
+  local p="$1"
+  [[ -e "$p" ]] || return 1
+  while [[ -L "$p" ]]; do
+    local dir
+    dir="$(cd -P "$(dirname "$p")" && pwd)"
+    p="$(readlink "$p")"
+    [[ "$p" != /* ]] && p="$dir/$p"
+  done
+  cd -P "$(dirname "$p")" && echo "$(pwd)/$(basename "$p")"
+}
+
 # ── Main ────────────────────────────────────────────────────────────────────
 main() {
   echo >&2
@@ -197,6 +244,8 @@ main() {
   fi
 
   prompt_local_config
+
+  detect_other_wrappers
 
   echo >&2
   ok "Installation complete!"
