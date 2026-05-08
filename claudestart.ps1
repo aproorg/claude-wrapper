@@ -138,6 +138,25 @@ function Get-ClaudeProject {
 # ============================================================================
 # API Key Management
 # ============================================================================
+# Invoke `op read` for a path, capturing stdout and stderr separately.
+# Returns a hashtable: @{ Key = <stdout-trimmed-or-null>; Err = <stderr> }.
+function Invoke-OpRead {
+    param([string]$Path)
+    $stderrFile = [IO.Path]::GetTempFileName()
+    try {
+        try {
+            $stdout = & op --account $OP_Account read $Path 2>$stderrFile
+        } catch {
+            return @{ Key = $null; Err = "op invocation failed: $($_.Exception.Message)" }
+        }
+        $stderr = (Get-Content $stderrFile -Raw -ErrorAction SilentlyContinue) -replace '\s+$', ''
+        $key = if ($stdout) { (@($stdout) -join "`n").Trim() } else { $null }
+        return @{ Key = $key; Err = $stderr }
+    } finally {
+        Remove-Item $stderrFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Get-ApiKey {
     param([string]$Project)
 
@@ -153,25 +172,43 @@ function Get-ApiKey {
     }
 
     $key = $null
+    $attempts = @()  # ordered list of @{ Path = ...; Err = ... } for diagnostics
 
     # Try project-specific field first
-    try {
-        $key = & op --account $OP_Account read "$OP_Item/$Project" 2>$null
-    } catch {}
+    $projectPath = "$OP_Item/$Project"
+    $r = Invoke-OpRead $projectPath
+    $attempts += @{ Path = $projectPath; Err = $r.Err }
+    if ($r.Key) { $key = $r.Key }
 
     # Fall back to default "API Key" field
     if (-not $key) {
-        try {
-            $key = & op --account $OP_Account read "$OP_Item/API Key" 2>$null
-        } catch {}
-
-        if ($key -and $env:CLAUDE_DEBUG -eq "1") {
-            [Console]::Error.WriteLine("Note: No key for project '$Project', using default")
+        $defaultPath = "$OP_Item/API Key"
+        $r = Invoke-OpRead $defaultPath
+        $attempts += @{ Path = $defaultPath; Err = $r.Err }
+        if ($r.Key) {
+            $key = $r.Key
+            if ($env:CLAUDE_DEBUG -eq "1") {
+                [Console]::Error.WriteLine("Note: No key for project '$Project', using default")
+            }
         }
     }
 
     if (-not $key) {
         [Console]::Error.WriteLine("ERROR: Failed to retrieve API key from 1Password")
+        if ($env:CLAUDE_DEBUG -eq "1") {
+            [Console]::Error.WriteLine("  account: $OP_Account")
+            [Console]::Error.WriteLine("  paths tried (with op stderr):")
+            foreach ($a in $attempts) {
+                [Console]::Error.WriteLine("    - $($a.Path)")
+                if ($a.Err) {
+                    foreach ($line in ($a.Err -split "`r?`n")) {
+                        if ($line) { [Console]::Error.WriteLine("        $line") }
+                    }
+                }
+            }
+        } else {
+            [Console]::Error.WriteLine("  Run with `$env:CLAUDE_DEBUG = `"1`" for op stderr details.")
+        }
         return $null
     }
 
