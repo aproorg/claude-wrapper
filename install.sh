@@ -4,9 +4,11 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install.sh | bash
 #
-# Override base URL (test from a branch):
-#   CLAUDE_ENV_URL=https://raw.githubusercontent.com/aproorg/claude-wrapper/<branch>/claude-env.sh \
-#     curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/<branch>/install.sh | bash
+# Override base URL (test from a branch). Note: `export` is required —
+# inline `VAR=value cmd1 | cmd2` only sets VAR for cmd1 (curl), not for
+# the bash subshell that runs this script:
+#   export CLAUDE_ENV_URL=https://raw.githubusercontent.com/aproorg/claude-wrapper/<branch>/claude-env.sh
+#   curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/<branch>/install.sh | bash
 #
 # Options:
 #   CLAUDE_FORCE=1    Overwrite existing wrapper without backup
