@@ -74,21 +74,53 @@ get_api_key() {
   fi
 
   local key=""
+  local errors=""
+  local stderr_file
+  stderr_file=$(mktemp -t claude-op-err.XXXXXX)
 
-  # Try project-specific field first, then fall back to default
-  key=$(op --account "$OP_ACCOUNT" read "${OP_ITEM}/${project}" 2>/dev/null || true)
+  # Try project-specific field first, then fall back to default. Capture op's
+  # stderr to a temp file so we can surface its actual error message if both
+  # attempts fail — without this, a generic "Failed to retrieve" tells users
+  # nothing about whether the cause is account mismatch, expired session,
+  # wrong OP_ITEM shape, etc.
+  key=$(op --account "$OP_ACCOUNT" read "${OP_ITEM}/${project}" 2>"$stderr_file" || true)
+  if [[ -z "$key" ]]; then
+    errors+="    - ${OP_ITEM}/${project}"$'\n'
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && errors+="        ${line}"$'\n'
+    done < "$stderr_file"
+  fi
 
   # Fall back to default "API Key" field
   if [[ -z "$key" ]]; then
-    key=$(op --account "$OP_ACCOUNT" read "${OP_ITEM}/API Key" 2>/dev/null || true)
-
-    if [[ -n "$key" && "${CLAUDE_DEBUG:-0}" == "1" ]]; then
+    : > "$stderr_file"
+    key=$(op --account "$OP_ACCOUNT" read "${OP_ITEM}/API Key" 2>"$stderr_file" || true)
+    if [[ -z "$key" ]]; then
+      errors+="    - ${OP_ITEM}/API Key"$'\n'
+      while IFS= read -r line; do
+        [[ -n "$line" ]] && errors+="        ${line}"$'\n'
+      done < "$stderr_file"
+    elif [[ "${CLAUDE_DEBUG:-0}" == "1" ]]; then
       echo "Note: No key for project '$project', using default" >&2
     fi
   fi
 
+  rm -f "$stderr_file"
+
   if [[ -z "$key" ]]; then
-    echo "ERROR: Failed to retrieve API key from 1Password" >&2
+    {
+      echo "ERROR: Failed to retrieve API key from 1Password"
+      echo "  account: ${OP_ACCOUNT}"
+      echo "  paths tried (with op stderr):"
+      printf '%s' "$errors"
+      echo "  Common fixes:"
+      echo "    - Sign in if session expired:    op signin --account ${OP_ACCOUNT}"
+      echo "    - List items in vault to verify path:"
+      echo "                                     op item list --vault Employee --account ${OP_ACCOUNT}"
+      echo "    - OP_ITEM in ~/.config/claude/local.env should be op://<Vault>/<Item>"
+      echo "      (the wrapper appends /<project> and /API Key to look up fields)"
+      echo "    - Field name is case-sensitive: 'API Key' (capital K) for the default field"
+    } >&2
     return 1
   fi
 
