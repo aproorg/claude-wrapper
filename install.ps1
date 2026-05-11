@@ -95,73 +95,6 @@ function Read-Existing($key) {
     return ""
 }
 
-# Try to enumerate field labels for an OP_ITEM. Returns array of labels,
-# empty array if op fails (not signed in, item doesn't exist, op missing).
-#
-# Note: `op item get` does NOT accept the op://Vault/Item syntax — that's
-# only valid for `op read`. We parse the OP_ITEM into vault + item name.
-function Get-OpFields {
-    param([string]$OpItem)
-    if (-not (Have 'op')) { return @() }
-
-    $stripped = $OpItem -replace '^op://', ''
-    $parts = $stripped.Split('/', 2)
-    if ($parts.Length -ne 2) { return @() }
-    $vault = $parts[0]
-    $item = $parts[1]
-
-    $account = if ($env:OP_ACCOUNT) { $env:OP_ACCOUNT } else { "aproorg.1password.eu" }
-    try {
-        $json = & op --account $account item get $item --vault $vault --format json 2>$null
-        if ($LASTEXITCODE -ne 0 -or -not $json) { return @() }
-        $parsed = ($json | Out-String | ConvertFrom-Json)
-        return @($parsed.fields | Where-Object { $_.label } | Select-Object -ExpandProperty label)
-    } catch {
-        return @()
-    }
-}
-
-function Prompt-OpField {
-    param([string]$OpItem, [string]$Default)
-    $fields = Get-OpFields $OpItem
-
-    if (-not $fields -or $fields.Count -eq 0) {
-        Write-Warn "Could not enumerate fields for ${OpItem} (op missing, not signed in, or item not found)"
-        while ($true) {
-            $reply = Prompt-Default "1Password field name (case-sensitive)" $Default
-            if ($reply -like 'op://*') {
-                Write-Warn "Field name is just the label (e.g. 'API Key'), not a full op:// path"
-                continue
-            }
-            return $reply
-        }
-    }
-
-    Write-Host ""
-    Write-Info "Fields available in ${OpItem}:"
-    for ($i = 0; $i -lt $fields.Count; $i++) {
-        Write-Host ("    [{0}] {1}" -f ($i + 1), $fields[$i])
-    }
-    Write-Host ""
-
-    while ($true) {
-        $reply = Prompt-Default "1Password field name (or number)" $Default
-        if ($reply -match '^\d+$') {
-            $idx = [int]$reply - 1
-            if ($idx -ge 0 -and $idx -lt $fields.Count) {
-                return $fields[$idx]
-            }
-            Write-Warn "Number out of range — try again"
-            continue
-        }
-        if ($reply -like 'op://*') {
-            Write-Warn "Field name is just the label (e.g. 'API Key'), not a full op:// path"
-            continue
-        }
-        return $reply
-    }
-}
-
 function Prompt-LocalConfig {
     Write-Host ""
     Write-Info "Configure your local connection settings:"
@@ -171,52 +104,53 @@ function Prompt-LocalConfig {
     $currentItem  = Read-Existing 'OP_ITEM'
     $currentField = Read-Existing 'OP_FIELD'
 
-    # Migrate legacy OP_ITEM that included the field as a path segment.
-    # Pre-#13, the field was baked into OP_ITEM (e.g. op://V/Item/API Key).
-    # Post-#13, OP_FIELD is separate and the wrapper appends it itself, so a
-    # legacy value would yield op://V/Item/API Key/API Key on lookup.
+    # Build the default secret reference from existing local.env. Three cases:
+    #   - Legacy 3+ segment OP_ITEM (field already baked in): use as-is
+    #   - Modern split (OP_ITEM + OP_FIELD): join with /
+    #   - No prior install: team default
     if ($currentItem) {
-        $stripped = $currentItem -replace '^op://', ''
-        $segs = $stripped.Split('/')
-        if ($segs.Count -gt 2) {
-            $migratedItem = "op://$($segs[0])/$($segs[1])"
-            $migratedField = ($segs | Select-Object -Skip 2) -join '/'
-            Write-Warn "Detected legacy OP_ITEM with field appended; migrating:"
-            Write-Warn "  $currentItem"
-            Write-Warn "  -> OP_ITEM=$migratedItem"
-            Write-Warn "  -> OP_FIELD=$migratedField"
-            $currentItem = $migratedItem
-            $currentField = $migratedField
+        $existingSegs = ($currentItem -replace '^op://', '').Split('/')
+        if ($existingSegs.Count -ge 3) {
+            $defaultRef = $currentItem
+        } elseif ($currentField) {
+            $defaultRef = "$currentItem/$currentField"
+        } else {
+            $defaultRef = "$currentItem/API Key"
         }
+    } else {
+        $defaultRef = "op://Employee/ai.apro.is litellm/API Key"
     }
 
-    $defaultUrl   = if ($currentUrl)   { $currentUrl }   else { "https://litellm.ai.apro.is" }
-    $defaultItem  = if ($currentItem)  { $currentItem }  else { "op://Employee/ai.apro.is litellm" }
-    $defaultField = if ($currentField) { $currentField } else { "API Key" }
-
+    $defaultUrl = if ($currentUrl) { $currentUrl } else { "https://litellm.ai.apro.is" }
     $litellmUrl = Prompt-Default "LiteLLM base URL" $defaultUrl
 
+    # One prompt accepts the full secret reference (op://Vault/Item/Field, or
+    # op://Vault/Item/Section/Field). This matches what 1Password's "Copy Secret
+    # Reference" produces — paste it directly, including the surrounding
+    # double quotes the desktop app adds; Prompt-Default strips them.
     while ($true) {
-        $opItem = Prompt-Default "1Password item (op://Vault/Item, no field)" $defaultItem
-        if (-not ($opItem -like 'op://*')) {
+        $ref = Prompt-Default "1Password secret reference (Copy Secret Reference in 1Password)" $defaultRef
+        if (-not ($ref -like 'op://*')) {
             Write-Warn "Must start with op:// — try again"
             continue
         }
-        $vSegs = ($opItem -replace '^op://', '').Split('/')
-        if ($vSegs.Count -gt 2) {
-            $hintField = ($vSegs | Select-Object -Skip 2) -join '/'
-            Write-Warn "OP_ITEM should be just op://Vault/Item — you included the field in the path."
-            Write-Warn "  Use op://$($vSegs[0])/$($vSegs[1]) here, then '$hintField' in the next prompt."
+        $refSegs = ($ref -replace '^op://', '').Split('/')
+        if ($refSegs.Count -lt 3) {
+            Write-Warn "Need a full reference like op://Vault/Item/Field — got '$ref'"
             continue
         }
-        if ($vSegs.Count -lt 2 -or -not $vSegs[0] -or -not $vSegs[1]) {
-            Write-Warn "OP_ITEM needs both Vault and Item — got '$opItem'"
+        if (-not $refSegs[0] -or -not $refSegs[1]) {
+            Write-Warn "Vault and Item must not be empty — got '$ref'"
             continue
         }
         break
     }
 
-    $opField = Prompt-OpField $opItem $defaultField
+    # Split into the storage format claudestart.ps1 expects: OP_ITEM is the
+    # item path (vault/item only); OP_FIELD is everything after, so it works
+    # for both plain fields ("API Key") and section-scoped fields.
+    $opItem = "op://$($refSegs[0])/$($refSegs[1])"
+    $opField = ($refSegs | Select-Object -Skip 2) -join '/'
 
     $content = @"
 # Local overrides — User-specific settings
