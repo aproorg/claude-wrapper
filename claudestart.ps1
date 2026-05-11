@@ -155,6 +155,35 @@ function Get-ClaudeProject {
     return (Sanitize-Name $raw)
 }
 
+# Returns "org/repo" from git origin (e.g. "aproorg/claude-wrapper"), or empty
+# string if not derivable. Used for the x-github-repo header so LiteLLM can
+# attribute usage per-repo. Slashes are intentional here — it's a header
+# value, not a filename or 1P field name. Override via CLAUDE_GITHUB_REPO.
+function Get-GitHubRepo {
+    if ($env:CLAUDE_GITHUB_REPO) { return $env:CLAUDE_GITHUB_REPO }
+
+    $url = ""
+    try {
+        $url = git remote get-url origin 2>$null
+    } catch {}
+    if (-not $url) { return "" }
+
+    # Strip protocol+host (HTTPS) or user@host: (SSH).
+    if ($url -match '://') {
+        $url = $url -replace '^[^:]+://[^/]+/', ''
+    } elseif ($url -match ':') {
+        $url = $url -replace '^[^:]*:', ''
+    }
+    $url = $url -replace '\.git$', ''
+
+    # Last two path components (handles GitLab subgroups: subgroup/project).
+    $segs = $url.Split('/')
+    if ($segs.Count -ge 2) {
+        return "$($segs[$segs.Count - 2])/$($segs[$segs.Count - 1])"
+    }
+    return ""
+}
+
 # ============================================================================
 # API Key Management
 # ============================================================================
@@ -272,9 +301,13 @@ if ($apiKey) {
 $env:CLAUDE_PROJECT = $Project
 
 # Custom headers — auto-inject x-github-repo for LiteLLM per-repo attribution.
+# Prefer the full org/repo from the git remote (e.g. "aproorg/claude-wrapper")
+# and fall back to the simple sanitized project name when no remote is set.
 # Appends to any pre-existing ANTHROPIC_CUSTOM_HEADERS (newline-separated per
 # Claude Code docs) so user-defined headers are preserved.
-$claudeHeader = "x-github-repo: $Project"
+$githubRepo = Get-GitHubRepo
+$headerValue = if ($githubRepo) { $githubRepo } else { $Project }
+$claudeHeader = "x-github-repo: $headerValue"
 if ($env:ANTHROPIC_CUSTOM_HEADERS) {
     $env:ANTHROPIC_CUSTOM_HEADERS = "$($env:ANTHROPIC_CUSTOM_HEADERS)`n$claudeHeader"
 } else {
