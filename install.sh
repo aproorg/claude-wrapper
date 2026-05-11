@@ -91,7 +91,13 @@ prompt_default() {
     IFS= read -r reply <&3 || reply=""
     exec 3<&-
   fi
-  printf '%s\n' "${reply:-$default}"
+  reply="${reply:-$default}"
+  # Strip surrounding matched quotes — copy-pasted values from docs/secret
+  # managers often arrive with quote chars that break naive validation.
+  if [[ "$reply" == \"*\" || "$reply" == \'*\' ]]; then
+    reply="${reply:1:${#reply}-2}"
+  fi
+  printf '%s\n' "$reply"
 }
 
 read_existing() {
@@ -100,111 +106,67 @@ read_existing() {
   sed -nE 's/^'"$key"'="(.*)"$/\1/p' "$LOCAL_ENV" | head -1
 }
 
-# Try to enumerate field labels for an OP_ITEM. Returns one label per line on
-# stdout, empty if op fails (not signed in, item doesn't exist, op missing).
-# Pure grep+sed JSON parse: 1Password field labels are plain text without
-# escape sequences, so no need for jq as a hard dependency.
-#
-# Note: `op item get` does NOT accept the op://Vault/Item syntax — that's
-# only valid for `op read`. We parse the OP_ITEM into vault + item name.
-list_op_fields() {
-  local op_item="$1"
-  local account="${OP_ACCOUNT:-aproorg.1password.eu}"
-  have op || return 0
-
-  local stripped="${op_item#op://}"
-  local vault="${stripped%%/*}"
-  local item="${stripped#*/}"
-  [[ -n "$vault" && -n "$item" && "$vault" != "$item" ]] || return 0
-
-  # Scope to the "fields" array (URLs and other sections also have "label" keys
-  # we don't want). Pretty-printed JSON has whitespace after colons, so the
-  # regex tolerates it. Plain text labels — no escape sequences to worry about.
-  op --account "$account" item get "$item" --vault "$vault" --format json 2>/dev/null \
-    | awk '/"fields":[[:space:]]*\[/{flag=1} flag' \
-    | grep -oE '"label":[[:space:]]*"[^"]*"' \
-    | sed -E 's/^"label":[[:space:]]*"//; s/"$//'
-}
-
-prompt_op_field() {
-  local op_item="$1"
-  local default_field="$2"
-  local fields field_array=()
-
-  fields=$(list_op_fields "$op_item")
-  if [[ -z "$fields" ]]; then
-    warn "Could not enumerate fields for $op_item (op missing, not signed in, or item not found)"
-    prompt_default "1Password field name (case-sensitive)" "$default_field"
-    return
-  fi
-
-  echo >&2
-  info "Fields available in $op_item:"
-  local i=1
-  while IFS= read -r field; do
-    [[ -z "$field" ]] && continue
-    field_array+=("$field")
-    printf "    [%d] %s\n" "$i" "$field" >&2
-    i=$((i+1))
-  done <<< "$fields"
-  echo >&2
-
-  while :; do
-    local reply
-    reply=$(prompt_default "1Password field name (or number)" "$default_field")
-    if [[ "$reply" =~ ^[0-9]+$ ]]; then
-      local idx=$((reply - 1))
-      if [[ $idx -ge 0 && $idx -lt ${#field_array[@]} ]]; then
-        printf '%s\n' "${field_array[$idx]}"
-        return
-      fi
-      warn "Number out of range — try again"
-      continue
-    fi
-    printf '%s\n' "$reply"
-    return
-  done
-}
-
 prompt_local_config() {
   echo >&2
   info "Configure your local connection settings:"
   echo >&2
 
-  local current_url current_item current_field litellm_url op_item op_field
+  local current_url current_item current_field default_ref litellm_url ref
   current_url=$(read_existing LITELLM_BASE_URL)
   current_item=$(read_existing OP_ITEM)
   current_field=$(read_existing OP_FIELD)
 
-  # Migrate legacy OP_ITEM that included the field as a path segment.
-  # Pre-#13, the field was baked into OP_ITEM (e.g. op://V/Item/API Key).
-  # Post-#13, OP_FIELD is separate and the wrapper appends it itself, so a
-  # legacy value would yield op://V/Item/API Key/API Key on lookup.
+  # Build the default secret reference from existing local.env. Three cases:
+  #   - Legacy 3+ segment OP_ITEM (field already baked in): use as-is
+  #   - Modern split (OP_ITEM + OP_FIELD): join with /
+  #   - No prior install: team default
   if [[ -n "$current_item" ]]; then
-    local stripped_item="${current_item#op://}"
-    local -a segs=()
-    IFS='/' read -ra segs <<< "$stripped_item"
-    if (( ${#segs[@]} > 2 )); then
-      local migrated_item="op://${segs[0]}/${segs[1]}"
-      local migrated_field="${stripped_item#${segs[0]}/${segs[1]}/}"
-      warn "Detected legacy OP_ITEM with field appended; migrating:"
-      warn "  $current_item"
-      warn "  → OP_ITEM=$migrated_item"
-      warn "  → OP_FIELD=$migrated_field"
-      current_item="$migrated_item"
-      current_field="$migrated_field"
+    local _existing_stripped="${current_item#op://}"
+    local -a _existing_segs=()
+    IFS='/' read -ra _existing_segs <<< "$_existing_stripped"
+    if (( ${#_existing_segs[@]} >= 3 )); then
+      default_ref="$current_item"
+    elif [[ -n "$current_field" ]]; then
+      default_ref="${current_item}/${current_field}"
+    else
+      default_ref="${current_item}/API Key"
     fi
+  else
+    default_ref="op://Employee/ai.apro.is litellm/API Key"
   fi
 
   litellm_url=$(prompt_default "LiteLLM base URL" "${current_url:-https://litellm.ai.apro.is}")
 
+  # One prompt accepts the full secret reference (op://Vault/Item/Field, or
+  # op://Vault/Item/Section/Field). This matches what 1Password's "Copy Secret
+  # Reference" produces — paste it directly, including the surrounding
+  # double quotes the desktop app adds; prompt_default strips them.
+  local _ref_stripped
+  local -a _ref_segs=()
   while :; do
-    op_item=$(prompt_default "1Password item (op://Vault/Item, no field)" "${current_item:-op://Employee/ai.apro.is litellm}")
-    [[ "$op_item" == op://* ]] && break
-    warn "Must start with op:// — try again"
+    ref=$(prompt_default "1Password secret reference (Copy Secret Reference in 1Password)" "$default_ref")
+    if [[ "$ref" != op://* ]]; then
+      warn "Must start with op:// — try again"
+      continue
+    fi
+    _ref_stripped="${ref#op://}"
+    IFS='/' read -ra _ref_segs <<< "$_ref_stripped"
+    if (( ${#_ref_segs[@]} < 3 )); then
+      warn "Need a full reference like op://Vault/Item/Field — got '$ref'"
+      continue
+    fi
+    if [[ -z "${_ref_segs[0]}" || -z "${_ref_segs[1]}" ]]; then
+      warn "Vault and Item must not be empty — got '$ref'"
+      continue
+    fi
+    break
   done
 
-  op_field=$(prompt_op_field "$op_item" "${current_field:-API Key}")
+  # Split into the storage format claude-env.sh expects: OP_ITEM is the item
+  # path (vault/item only); OP_FIELD is everything after, so it works for both
+  # plain fields ("API Key") and section-scoped fields ("Section/Field").
+  local op_item="op://${_ref_segs[0]}/${_ref_segs[1]}"
+  local op_field="${_ref_stripped#${_ref_segs[0]}/${_ref_segs[1]}/}"
 
   umask 077
   cat > "$LOCAL_ENV" <<EOF
