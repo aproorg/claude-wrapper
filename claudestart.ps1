@@ -11,6 +11,9 @@
 $LiteLLM_BaseURL = "https://litellm.ai.apro.is"
 $OP_Account = "aproorg.1password.eu"
 $OP_Item = "op://Employee/ai.apro.is litellm"
+# Field name used as the API-key fallback when no project-specific field exists.
+# Overridable via OP_FIELD in local.env for users with non-standard field names.
+$OP_Field = "API Key"
 
 $Model_Opus = "claude-opus-4-6"
 $Model_Sonnet = "sonnet"
@@ -93,10 +96,12 @@ Remove-Variable _RemoteUrl, _RemoteCache, _NeedsFetch, _Age, _tmp, _content, _St
 $_LocalEnvPath = "$env:APPDATA\claude\local.env"
 if (Test-Path $_LocalEnvPath) {
     foreach ($line in Get-Content $_LocalEnvPath) {
-        if ($line -match '^(LITELLM_BASE_URL|OP_ITEM)="(.*)"') {
+        if ($line -match '^(LITELLM_BASE_URL|OP_ITEM|OP_FIELD|OP_ACCOUNT)="(.*)"') {
             switch ($Matches[1]) {
                 "LITELLM_BASE_URL" { $LiteLLM_BaseURL = $Matches[2] }
                 "OP_ITEM"          { $OP_Item = $Matches[2] }
+                "OP_FIELD"         { $OP_Field = $Matches[2] }
+                "OP_ACCOUNT"       { $OP_Account = $Matches[2] }
             }
         }
     }
@@ -180,15 +185,16 @@ function Get-ApiKey {
     $attempts += @{ Path = $projectPath; Err = $r.Err }
     if ($r.Key) { $key = $r.Key }
 
-    # Fall back to default "API Key" field
+    # Fall back to the configured fallback field (default "API Key", overridable
+    # via OP_FIELD in local.env for users with non-standard 1Password field names)
     if (-not $key) {
-        $defaultPath = "$OP_Item/API Key"
+        $defaultPath = "$OP_Item/$OP_Field"
         $r = Invoke-OpRead $defaultPath
         $attempts += @{ Path = $defaultPath; Err = $r.Err }
         if ($r.Key) {
             $key = $r.Key
             if ($env:CLAUDE_DEBUG -eq "1") {
-                [Console]::Error.WriteLine("Note: No key for project '$Project', using default")
+                [Console]::Error.WriteLine("Note: No key for project '$Project', using default field '$OP_Field'")
             }
         }
     }
@@ -206,6 +212,8 @@ function Get-ApiKey {
                     }
                 }
             }
+            [Console]::Error.WriteLine("  Field name is case-sensitive (currently OP_FIELD='$OP_Field').")
+            [Console]::Error.WriteLine("  Override via OP_FIELD in `$env:APPDATA\claude\local.env if needed.")
         } else {
             [Console]::Error.WriteLine("  Run with `$env:CLAUDE_DEBUG = `"1`" for op stderr details.")
         }

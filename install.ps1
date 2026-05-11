@@ -93,25 +93,30 @@ function Prompt-LocalConfig {
     Write-Info "Configure your local connection settings:"
     Write-Host ""
 
-    $currentUrl  = Read-Existing 'LITELLM_BASE_URL'
-    $currentItem = Read-Existing 'OP_ITEM'
+    $currentUrl   = Read-Existing 'LITELLM_BASE_URL'
+    $currentItem  = Read-Existing 'OP_ITEM'
+    $currentField = Read-Existing 'OP_FIELD'
 
-    $defaultUrl  = if ($currentUrl)  { $currentUrl }  else { "https://litellm.ai.apro.is" }
-    $defaultItem = if ($currentItem) { $currentItem } else { "op://Employee/ai.apro.is litellm" }
+    $defaultUrl   = if ($currentUrl)   { $currentUrl }   else { "https://litellm.ai.apro.is" }
+    $defaultItem  = if ($currentItem)  { $currentItem }  else { "op://Employee/ai.apro.is litellm" }
+    $defaultField = if ($currentField) { $currentField } else { "API Key" }
 
     $litellmUrl = Prompt-Default "LiteLLM base URL" $defaultUrl
 
     while ($true) {
-        $opItem = Prompt-Default "1Password item (op://...)" $defaultItem
+        $opItem = Prompt-Default "1Password item (op://Vault/Item, no field)" $defaultItem
         if ($opItem -like 'op://*') { break }
         Write-Warn "Must start with op:// — try again"
     }
+
+    $opField = Prompt-Default "1Password field name for the API key (case-sensitive)" $defaultField
 
     $content = @"
 # Local overrides — User-specific settings
 # Written by install.ps1, sourced by claudestart.ps1
 LITELLM_BASE_URL="$litellmUrl"
 OP_ITEM="$opItem"
+OP_FIELD="$opField"
 "@
     Set-Content -Path $LocalEnv -Value $content -Encoding UTF8
     Write-Ok "Wrote $LocalEnv"

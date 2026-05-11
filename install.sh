@@ -105,17 +105,20 @@ prompt_local_config() {
   info "Configure your local connection settings:"
   echo >&2
 
-  local current_url current_item litellm_url op_item
+  local current_url current_item current_field litellm_url op_item op_field
   current_url=$(read_existing LITELLM_BASE_URL)
   current_item=$(read_existing OP_ITEM)
+  current_field=$(read_existing OP_FIELD)
 
   litellm_url=$(prompt_default "LiteLLM base URL" "${current_url:-https://litellm.ai.apro.is}")
 
   while :; do
-    op_item=$(prompt_default "1Password item (op://...)" "${current_item:-op://Employee/ai.apro.is litellm}")
+    op_item=$(prompt_default "1Password item (op://Vault/Item, no field)" "${current_item:-op://Employee/ai.apro.is litellm}")
     [[ "$op_item" == op://* ]] && break
     warn "Must start with op:// — try again"
   done
+
+  op_field=$(prompt_default "1Password field name for the API key (case-sensitive)" "${current_field:-API Key}")
 
   umask 077
   cat > "$LOCAL_ENV" <<EOF
@@ -123,6 +126,7 @@ prompt_local_config() {
 # Written by install.sh, sourced by claude-env.sh
 LITELLM_BASE_URL="$litellm_url"
 OP_ITEM="$op_item"
+OP_FIELD="$op_field"
 EOF
   ok "Wrote $LOCAL_ENV"
 }
