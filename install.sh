@@ -91,7 +91,13 @@ prompt_default() {
     IFS= read -r reply <&3 || reply=""
     exec 3<&-
   fi
-  printf '%s\n' "${reply:-$default}"
+  reply="${reply:-$default}"
+  # Strip surrounding matched quotes — copy-pasted values from docs/secret
+  # managers often arrive with quote chars that break naive validation.
+  if [[ "$reply" == \"*\" || "$reply" == \'*\' ]]; then
+    reply="${reply:1:${#reply}-2}"
+  fi
+  printf '%s\n' "$reply"
 }
 
 read_existing() {
@@ -134,8 +140,16 @@ prompt_op_field() {
   fields=$(list_op_fields "$op_item")
   if [[ -z "$fields" ]]; then
     warn "Could not enumerate fields for $op_item (op missing, not signed in, or item not found)"
-    prompt_default "1Password field name (case-sensitive)" "$default_field"
-    return
+    while :; do
+      local reply
+      reply=$(prompt_default "1Password field name (case-sensitive)" "$default_field")
+      if [[ "$reply" == op://* ]]; then
+        warn "Field name is just the label (e.g. 'API Key'), not a full op:// path"
+        continue
+      fi
+      printf '%s\n' "$reply"
+      return
+    done
   fi
 
   echo >&2
@@ -159,6 +173,10 @@ prompt_op_field() {
         return
       fi
       warn "Number out of range — try again"
+      continue
+    fi
+    if [[ "$reply" == op://* ]]; then
+      warn "Field name is just the label (e.g. 'API Key'), not a full op:// path"
       continue
     fi
     printf '%s\n' "$reply"
@@ -200,8 +218,24 @@ prompt_local_config() {
 
   while :; do
     op_item=$(prompt_default "1Password item (op://Vault/Item, no field)" "${current_item:-op://Employee/ai.apro.is litellm}")
-    [[ "$op_item" == op://* ]] && break
-    warn "Must start with op:// — try again"
+    if [[ "$op_item" != op://* ]]; then
+      warn "Must start with op:// — try again"
+      continue
+    fi
+    local _validate_stripped="${op_item#op://}"
+    local -a _validate_segs=()
+    IFS='/' read -ra _validate_segs <<< "$_validate_stripped"
+    if (( ${#_validate_segs[@]} > 2 )); then
+      local _hint_field="${_validate_stripped#${_validate_segs[0]}/${_validate_segs[1]}/}"
+      warn "OP_ITEM should be just op://Vault/Item — you included the field in the path."
+      warn "  Use op://${_validate_segs[0]}/${_validate_segs[1]} here, then '${_hint_field}' in the next prompt."
+      continue
+    fi
+    if (( ${#_validate_segs[@]} < 2 )) || [[ -z "${_validate_segs[0]}" || -z "${_validate_segs[1]}" ]]; then
+      warn "OP_ITEM needs both Vault and Item — got '$op_item'"
+      continue
+    fi
+    break
   done
 
   op_field=$(prompt_op_field "$op_item" "${current_field:-API Key}")

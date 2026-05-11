@@ -77,7 +77,14 @@ function Prompt-Default($question, $default) {
     if ([Console]::IsInputRedirected) { return $default }
     $reply = Read-Host "  $question [$default]"
     if ([string]::IsNullOrWhiteSpace($reply)) { return $default }
-    return $reply.Trim()
+    # Strip whitespace and surrounding matched quotes — copy-pasted secret
+    # references and shell-like values often include literal quote chars.
+    $reply = $reply.Trim()
+    if (($reply.StartsWith('"') -and $reply.EndsWith('"')) -or
+        ($reply.StartsWith("'") -and $reply.EndsWith("'"))) {
+        $reply = $reply.Substring(1, $reply.Length - 2)
+    }
+    return $reply
 }
 
 function Read-Existing($key) {
@@ -119,8 +126,15 @@ function Prompt-OpField {
     $fields = Get-OpFields $OpItem
 
     if (-not $fields -or $fields.Count -eq 0) {
-        Write-Warn "Could not enumerate fields for $OpItem (op missing, not signed in, or item not found)"
-        return (Prompt-Default "1Password field name (case-sensitive)" $Default)
+        Write-Warn "Could not enumerate fields for ${OpItem} (op missing, not signed in, or item not found)"
+        while ($true) {
+            $reply = Prompt-Default "1Password field name (case-sensitive)" $Default
+            if ($reply -like 'op://*') {
+                Write-Warn "Field name is just the label (e.g. 'API Key'), not a full op:// path"
+                continue
+            }
+            return $reply
+        }
     }
 
     Write-Host ""
@@ -138,6 +152,10 @@ function Prompt-OpField {
                 return $fields[$idx]
             }
             Write-Warn "Number out of range — try again"
+            continue
+        }
+        if ($reply -like 'op://*') {
+            Write-Warn "Field name is just the label (e.g. 'API Key'), not a full op:// path"
             continue
         }
         return $reply
@@ -180,8 +198,22 @@ function Prompt-LocalConfig {
 
     while ($true) {
         $opItem = Prompt-Default "1Password item (op://Vault/Item, no field)" $defaultItem
-        if ($opItem -like 'op://*') { break }
-        Write-Warn "Must start with op:// — try again"
+        if (-not ($opItem -like 'op://*')) {
+            Write-Warn "Must start with op:// — try again"
+            continue
+        }
+        $vSegs = ($opItem -replace '^op://', '').Split('/')
+        if ($vSegs.Count -gt 2) {
+            $hintField = ($vSegs | Select-Object -Skip 2) -join '/'
+            Write-Warn "OP_ITEM should be just op://Vault/Item — you included the field in the path."
+            Write-Warn "  Use op://$($vSegs[0])/$($vSegs[1]) here, then '$hintField' in the next prompt."
+            continue
+        }
+        if ($vSegs.Count -lt 2 -or -not $vSegs[0] -or -not $vSegs[1]) {
+            Write-Warn "OP_ITEM needs both Vault and Item — got '$opItem'"
+            continue
+        }
+        break
     }
 
     $opField = Prompt-OpField $opItem $defaultField
