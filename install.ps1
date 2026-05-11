@@ -88,30 +88,91 @@ function Read-Existing($key) {
     return ""
 }
 
+# Try to enumerate field labels for an OP_ITEM. Returns array of labels,
+# empty array if op fails (not signed in, item doesn't exist, op missing).
+#
+# Note: `op item get` does NOT accept the op://Vault/Item syntax — that's
+# only valid for `op read`. We parse the OP_ITEM into vault + item name.
+function Get-OpFields {
+    param([string]$OpItem)
+    if (-not (Have 'op')) { return @() }
+
+    $stripped = $OpItem -replace '^op://', ''
+    $parts = $stripped.Split('/', 2)
+    if ($parts.Length -ne 2) { return @() }
+    $vault = $parts[0]
+    $item = $parts[1]
+
+    $account = if ($env:OP_ACCOUNT) { $env:OP_ACCOUNT } else { "aproorg.1password.eu" }
+    try {
+        $json = & op --account $account item get $item --vault $vault --format json 2>$null
+        if ($LASTEXITCODE -ne 0 -or -not $json) { return @() }
+        $parsed = ($json | Out-String | ConvertFrom-Json)
+        return @($parsed.fields | Where-Object { $_.label } | Select-Object -ExpandProperty label)
+    } catch {
+        return @()
+    }
+}
+
+function Prompt-OpField {
+    param([string]$OpItem, [string]$Default)
+    $fields = Get-OpFields $OpItem
+
+    if (-not $fields -or $fields.Count -eq 0) {
+        Write-Warn "Could not enumerate fields for $OpItem (op missing, not signed in, or item not found)"
+        return (Prompt-Default "1Password field name (case-sensitive)" $Default)
+    }
+
+    Write-Host ""
+    Write-Info "Fields available in $OpItem:"
+    for ($i = 0; $i -lt $fields.Count; $i++) {
+        Write-Host ("    [{0}] {1}" -f ($i + 1), $fields[$i])
+    }
+    Write-Host ""
+
+    while ($true) {
+        $reply = Prompt-Default "1Password field name (or number)" $Default
+        if ($reply -match '^\d+$') {
+            $idx = [int]$reply - 1
+            if ($idx -ge 0 -and $idx -lt $fields.Count) {
+                return $fields[$idx]
+            }
+            Write-Warn "Number out of range — try again"
+            continue
+        }
+        return $reply
+    }
+}
+
 function Prompt-LocalConfig {
     Write-Host ""
     Write-Info "Configure your local connection settings:"
     Write-Host ""
 
-    $currentUrl  = Read-Existing 'LITELLM_BASE_URL'
-    $currentItem = Read-Existing 'OP_ITEM'
+    $currentUrl   = Read-Existing 'LITELLM_BASE_URL'
+    $currentItem  = Read-Existing 'OP_ITEM'
+    $currentField = Read-Existing 'OP_FIELD'
 
-    $defaultUrl  = if ($currentUrl)  { $currentUrl }  else { "https://litellm.ai.apro.is" }
-    $defaultItem = if ($currentItem) { $currentItem } else { "op://Employee/ai.apro.is litellm" }
+    $defaultUrl   = if ($currentUrl)   { $currentUrl }   else { "https://litellm.ai.apro.is" }
+    $defaultItem  = if ($currentItem)  { $currentItem }  else { "op://Employee/ai.apro.is litellm" }
+    $defaultField = if ($currentField) { $currentField } else { "API Key" }
 
     $litellmUrl = Prompt-Default "LiteLLM base URL" $defaultUrl
 
     while ($true) {
-        $opItem = Prompt-Default "1Password item (op://...)" $defaultItem
+        $opItem = Prompt-Default "1Password item (op://Vault/Item, no field)" $defaultItem
         if ($opItem -like 'op://*') { break }
         Write-Warn "Must start with op:// — try again"
     }
+
+    $opField = Prompt-OpField $opItem $defaultField
 
     $content = @"
 # Local overrides — User-specific settings
 # Written by install.ps1, sourced by claudestart.ps1
 LITELLM_BASE_URL="$litellmUrl"
 OP_ITEM="$opItem"
+OP_FIELD="$opField"
 "@
     Set-Content -Path $LocalEnv -Value $content -Encoding UTF8
     Write-Ok "Wrote $LocalEnv"

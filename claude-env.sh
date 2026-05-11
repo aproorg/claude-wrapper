@@ -9,6 +9,11 @@
 LITELLM_BASE_URL="https://litellm.ai.apro.is"
 OP_ACCOUNT="aproorg.1password.eu"
 OP_ITEM="op://Employee/ai.apro.is litellm"
+# Field name used as the API-key fallback when no project-specific field exists.
+# 1Password's `op read` is exact-match and case-sensitive; this default works
+# for the standard apro item, but users with non-standard field names can
+# override it via OP_FIELD in ~/.config/claude/local.env.
+OP_FIELD="API Key"
 
 # Source local overrides (written by install.js)
 _CLAUDE_LOCAL_ENV="${XDG_CONFIG_HOME:-$HOME/.config}/claude/local.env"
@@ -91,17 +96,18 @@ get_api_key() {
     done < "$stderr_file"
   fi
 
-  # Fall back to default "API Key" field
+  # Fall back to the configured fallback field (default "API Key", overridable
+  # via OP_FIELD in local.env for users with non-standard 1Password field names)
   if [[ -z "$key" ]]; then
     : > "$stderr_file"
-    key=$(op --account "$OP_ACCOUNT" read "${OP_ITEM}/API Key" 2>"$stderr_file" || true)
+    key=$(op --account "$OP_ACCOUNT" read "${OP_ITEM}/${OP_FIELD}" 2>"$stderr_file" || true)
     if [[ -z "$key" ]]; then
-      errors+="    - ${OP_ITEM}/API Key"$'\n'
+      errors+="    - ${OP_ITEM}/${OP_FIELD}"$'\n'
       while IFS= read -r line; do
         [[ -n "$line" ]] && errors+="        ${line}"$'\n'
       done < "$stderr_file"
     elif [[ "${CLAUDE_DEBUG:-0}" == "1" ]]; then
-      echo "Note: No key for project '$project', using default" >&2
+      echo "Note: No key for project '$project', using default field '${OP_FIELD}'" >&2
     fi
   fi
 
@@ -117,9 +123,11 @@ get_api_key() {
       echo "    - Sign in if session expired:    op signin --account ${OP_ACCOUNT}"
       echo "    - List items in vault to verify path:"
       echo "                                     op item list --vault Employee --account ${OP_ACCOUNT}"
-      echo "    - OP_ITEM in ~/.config/claude/local.env should be op://<Vault>/<Item>"
-      echo "      (the wrapper appends /<project> and /API Key to look up fields)"
-      echo "    - Field name is case-sensitive: 'API Key' (capital K) for the default field"
+      echo "    - OP_ITEM should be op://<Vault>/<Item> (no field). Currently: ${OP_ITEM}"
+      echo "      (the wrapper appends /<project> and /${OP_FIELD} to look up fields)"
+      echo "    - Field name is case-sensitive (currently OP_FIELD='${OP_FIELD}')."
+      echo "      Override via OP_FIELD in ~/.config/claude/local.env if your item uses"
+      echo "      a different name (e.g. 'API key' with lowercase k, or 'token')."
     } >&2
     return 1
   fi
