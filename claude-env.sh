@@ -23,6 +23,19 @@ if [[ -f "$_CLAUDE_LOCAL_ENV" ]]; then
 fi
 unset _CLAUDE_LOCAL_ENV
 
+# Defensive migration: legacy local.env files set OP_ITEM with the field baked
+# into the path (e.g. op://V/Item/API Key). Post-#13, OP_FIELD is separate and
+# the wrapper appends it itself, so a legacy 3+ segment OP_ITEM would yield
+# bogus lookups like op://V/Item/API Key/API Key. Split silently — a 1Password
+# item path is always exactly Vault/Item; anything beyond is the field.
+_op_stripped="${OP_ITEM#op://}"
+IFS='/' read -ra _op_segs <<< "$_op_stripped"
+if (( ${#_op_segs[@]} > 2 )); then
+  OP_ITEM="op://${_op_segs[0]}/${_op_segs[1]}"
+  OP_FIELD="${_op_stripped#${_op_segs[0]}/${_op_segs[1]}/}"
+fi
+unset _op_stripped _op_segs
+
 # Models
 CLAUDE_MODEL_OPUS="claude-opus-4-6"
 CLAUDE_MODEL_SONNET="sonnet"

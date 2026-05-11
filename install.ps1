@@ -124,7 +124,7 @@ function Prompt-OpField {
     }
 
     Write-Host ""
-    Write-Info "Fields available in $OpItem:"
+    Write-Info "Fields available in ${OpItem}:"
     for ($i = 0; $i -lt $fields.Count; $i++) {
         Write-Host ("    [{0}] {1}" -f ($i + 1), $fields[$i])
     }
@@ -152,6 +152,25 @@ function Prompt-LocalConfig {
     $currentUrl   = Read-Existing 'LITELLM_BASE_URL'
     $currentItem  = Read-Existing 'OP_ITEM'
     $currentField = Read-Existing 'OP_FIELD'
+
+    # Migrate legacy OP_ITEM that included the field as a path segment.
+    # Pre-#13, the field was baked into OP_ITEM (e.g. op://V/Item/API Key).
+    # Post-#13, OP_FIELD is separate and the wrapper appends it itself, so a
+    # legacy value would yield op://V/Item/API Key/API Key on lookup.
+    if ($currentItem) {
+        $stripped = $currentItem -replace '^op://', ''
+        $segs = $stripped.Split('/')
+        if ($segs.Count -gt 2) {
+            $migratedItem = "op://$($segs[0])/$($segs[1])"
+            $migratedField = ($segs | Select-Object -Skip 2) -join '/'
+            Write-Warn "Detected legacy OP_ITEM with field appended; migrating:"
+            Write-Warn "  $currentItem"
+            Write-Warn "  -> OP_ITEM=$migratedItem"
+            Write-Warn "  -> OP_FIELD=$migratedField"
+            $currentItem = $migratedItem
+            $currentField = $migratedField
+        }
+    }
 
     $defaultUrl   = if ($currentUrl)   { $currentUrl }   else { "https://litellm.ai.apro.is" }
     $defaultItem  = if ($currentItem)  { $currentItem }  else { "op://Employee/ai.apro.is litellm" }

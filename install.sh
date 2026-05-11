@@ -176,6 +176,26 @@ prompt_local_config() {
   current_item=$(read_existing OP_ITEM)
   current_field=$(read_existing OP_FIELD)
 
+  # Migrate legacy OP_ITEM that included the field as a path segment.
+  # Pre-#13, the field was baked into OP_ITEM (e.g. op://V/Item/API Key).
+  # Post-#13, OP_FIELD is separate and the wrapper appends it itself, so a
+  # legacy value would yield op://V/Item/API Key/API Key on lookup.
+  if [[ -n "$current_item" ]]; then
+    local stripped_item="${current_item#op://}"
+    local -a segs=()
+    IFS='/' read -ra segs <<< "$stripped_item"
+    if (( ${#segs[@]} > 2 )); then
+      local migrated_item="op://${segs[0]}/${segs[1]}"
+      local migrated_field="${stripped_item#${segs[0]}/${segs[1]}/}"
+      warn "Detected legacy OP_ITEM with field appended; migrating:"
+      warn "  $current_item"
+      warn "  → OP_ITEM=$migrated_item"
+      warn "  → OP_FIELD=$migrated_field"
+      current_item="$migrated_item"
+      current_field="$migrated_field"
+    fi
+  fi
+
   litellm_url=$(prompt_default "LiteLLM base URL" "${current_url:-https://litellm.ai.apro.is}")
 
   while :; do
