@@ -108,6 +108,21 @@ if (Test-Path $_LocalEnvPath) {
 }
 Remove-Variable _LocalEnvPath -ErrorAction SilentlyContinue
 
+# Defensive migration: legacy local.env files set OP_ITEM with the field baked
+# into the path (e.g. op://V/Item/API Key). Post-#13, OP_FIELD is separate and
+# the wrapper appends it itself, so a legacy 3+ segment OP_ITEM would yield
+# bogus lookups like op://V/Item/API Key/API Key. Split silently — a 1Password
+# item path is always exactly Vault/Item; anything beyond is the field.
+if ($OP_Item) {
+    $_opStripped = $OP_Item -replace '^op://', ''
+    $_opSegs = $_opStripped.Split('/')
+    if ($_opSegs.Count -gt 2) {
+        $OP_Item = "op://$($_opSegs[0])/$($_opSegs[1])"
+        $OP_Field = ($_opSegs | Select-Object -Skip 2) -join '/'
+    }
+    Remove-Variable _opStripped, _opSegs -ErrorAction SilentlyContinue
+}
+
 # ============================================================================
 # Project Detection
 # ============================================================================
