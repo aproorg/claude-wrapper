@@ -65,6 +65,39 @@ detect_project() {
   sanitize_name "$raw_name"
 }
 
+# Returns "org/repo" from git origin (e.g. "aproorg/claude-wrapper"), or empty
+# string if not derivable. Used for the x-github-repo header so LiteLLM can
+# attribute usage per-repo. Slashes are intentional here — it's a header
+# value, not a filename or 1P field name (which is what CLAUDE_PROJECT is for).
+# Override via CLAUDE_GITHUB_REPO. Handles SSH (git@host:org/repo.git), HTTPS
+# (https://host/org/repo.git), and falls back to the last two path components
+# for nested-group hosts like GitLab.
+detect_github_repo() {
+  if [[ -n "${CLAUDE_GITHUB_REPO:-}" ]]; then
+    echo "$CLAUDE_GITHUB_REPO"
+    return
+  fi
+
+  local url
+  url=$(git remote get-url origin 2>/dev/null || true)
+  [[ -z "$url" ]] && return
+
+  if [[ "$url" == *://* ]]; then
+    url="${url#*://}"   # host/path
+    url="${url#*/}"     # path
+  elif [[ "$url" == *:* ]]; then
+    url="${url##*:}"    # path (after last colon, handles git@host:path)
+  fi
+  url="${url%.git}"
+
+  if [[ "$url" == */* ]]; then
+    local _tail="${url##*/}"
+    local _rest="${url%/*}"
+    local _head="${_rest##*/}"
+    echo "${_head}/${_tail}"
+  fi
+}
+
 # ============================================================================
 # API Key Management
 # ============================================================================
@@ -195,17 +228,20 @@ fi
 export CLAUDE_PROJECT
 
 # Custom headers — auto-inject x-github-repo for LiteLLM per-repo attribution.
+# Prefer the full org/repo from the git remote (e.g. "aproorg/claude-wrapper")
+# and fall back to the simple sanitized project name when no remote is set.
 # Appends to any pre-existing ANTHROPIC_CUSTOM_HEADERS (newline-separated per
 # Claude Code docs) so user-defined headers from local.env or middleware.sh
 # are preserved.
-_CLAUDE_HEADER="x-github-repo: ${CLAUDE_PROJECT}"
+_CLAUDE_GH_REPO=$(detect_github_repo)
+_CLAUDE_HEADER="x-github-repo: ${_CLAUDE_GH_REPO:-$CLAUDE_PROJECT}"
 if [[ -n "${ANTHROPIC_CUSTOM_HEADERS:-}" ]]; then
   export ANTHROPIC_CUSTOM_HEADERS="${ANTHROPIC_CUSTOM_HEADERS}
 ${_CLAUDE_HEADER}"
 else
   export ANTHROPIC_CUSTOM_HEADERS="${_CLAUDE_HEADER}"
 fi
-unset _CLAUDE_HEADER
+unset _CLAUDE_HEADER _CLAUDE_GH_REPO
 
 if [[ "${CLAUDE_DEBUG:-0}" == "1" ]]; then
   echo "Claude: project=$CLAUDE_PROJECT base=$LITELLM_BASE_URL model=$ANTHROPIC_MODEL headers=$ANTHROPIC_CUSTOM_HEADERS" >&2
