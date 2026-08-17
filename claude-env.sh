@@ -210,12 +210,27 @@ CLAUDE_PROJECT=$(detect_project)
 export ANTHROPIC_BASE_URL="${LITELLM_BASE_URL}"
 export ANTHROPIC_MODEL="${CLAUDE_MODEL:-$CLAUDE_MODEL_OPUS}"
 export ANTHROPIC_SMALL_FAST_MODEL="${CLAUDE_MODEL_HAIKU}"
-export CLAUDE_CODE_SUBAGENT_MODEL="${CLAUDE_MODEL_HAIKU}"
 
-# Feature flags
-export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
-export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
-export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+# CLAUDE_CODE_SUBAGENT_MODEL is a hard override, not a default: setting it
+# discards both the model the spawning agent passes on each Agent call and the
+# model an agent definition declares in its frontmatter. Left unset, that
+# precedence applies — per-spawn choice, then agent frontmatter, then inherit the
+# parent model. Set it in local.env to pin one.
+[[ -n "${CLAUDE_CODE_SUBAGENT_MODEL:-}" ]] && export CLAUDE_CODE_SUBAGENT_MODEL
+
+# Feature flags. Each is a default, not a pin: a value already set in
+# ~/.config/claude/local.env wins. That file is sourced near the top of this
+# script and the 300s refresh never rewrites it, so a per-dev override persists
+# across launches and across updates to this file.
+export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS="${CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS:-1}"
+export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS="${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-1}"
+export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="${CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:-1}"
+
+# Deferred MCP tool loading ("tool search") — off by default because it needs the
+# experimental-beta suppression above lifted. See README → "Deferred MCP tool
+# loading". Do not pin haiku for subagents with this on: Bedrock's haiku-4-5
+# rejects tools[].custom.defer_loading.
+[[ -n "${ENABLE_TOOL_SEARCH:-}" ]] && export ENABLE_TOOL_SEARCH
 
 # Get API key
 if API_KEY=$(get_api_key "$CLAUDE_PROJECT"); then

@@ -256,6 +256,10 @@ To suppress the header on a specific project (rare — e.g., experimental scratc
 | `CLAUDE_PROJECT` | (auto-detected) | Override project name |
 | `CLAUDE_DEBUG` | `0` | Enable debug output |
 | `ANTHROPIC_CUSTOM_HEADERS` | (auto-set) | Auto-injected `x-github-repo: $CLAUDE_PROJECT`. Pre-existing values preserved (header appended on new line). |
+| `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS` | `1` | Suppress Claude Code's experimental beta headers and request fields. Set to `0` to lift the suppression. |
+| `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | `1` | Enable the agent-teams feature. |
+| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | `1` | Suppress requests that aren't part of the session itself. |
+| `ENABLE_TOOL_SEARCH` | (unset) | Send MCP tool schemas on demand instead of inline. Requires `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=0` — see "Deferred MCP tool loading" below. |
 
 **Files:**
 
@@ -282,6 +286,41 @@ curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install
 ```
 
 The file uses simple `KEY="VALUE"` format and has `0600` permissions.
+
+</details>
+
+<details>
+<summary>Deferred MCP tool loading (tool search)</summary>
+
+Claude Code can send MCP tool *names* up front and fetch an individual schema on demand via a `ToolSearch` tool, instead of inlining every schema in every request. It enables this only for providers it recognises as first-party, so sessions routed through the LiteLLM gateway carry all MCP tool schemas inline on every turn.
+
+Measured on this wrapper with four MCP servers connected:
+
+| | Tools sent | Tool schema bytes | Total request |
+|---|---|---|---|
+| Default | 79 (52 from MCP) | 196,449 | 227,762 |
+| Tool search on | 10 (0 from MCP) | 37,665 | 54,121 |
+
+On a trivial request the tool schemas were 86% of the payload, around 44K tokens. Per-turn prompt tokens across a real session went from ~68,900 to ~20,700.
+
+**Opt in** by adding both lines to `~/.config/claude/local.env`:
+
+```
+CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=0
+ENABLE_TOOL_SEARCH=true
+```
+
+Both are required. Tool search rides on the `advanced-tool-use-2025-11-20` beta, which the default suppression strips — with the suppression left in place, `ENABLE_TOOL_SEARCH` alone does nothing.
+
+Verified against `litellm.ai.apro.is` on Bedrock: prompt-cache reads stayed monotonic with zero misses, `tool_reference` blocks round-tripped, and MCP tools resolved and drove correctly on demand.
+
+| Model | Status |
+|---|---|
+| `opus-4-7`, `opus-4-8`, `opus-5` | Works |
+| `sonnet-4-6`, `sonnet-5` | Works |
+| `haiku-4-5` | **Rejects** `tools[].custom.defer_loading` with HTTP 400 |
+
+Because of that last row, don't combine this with `CLAUDE_CODE_SUBAGENT_MODEL` pinned to haiku — every subagent turn would fail. Lifting the beta suppression also re-enables four other experimental betas (`context-management-2025-06-27`, `prompt-caching-scope-2026-01-05`, `thinking-token-count-2026-05-13`, `afk-mode-2026-01-31`); there is no per-beta switch.
 
 </details>
 

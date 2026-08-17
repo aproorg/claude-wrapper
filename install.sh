@@ -168,6 +168,15 @@ prompt_local_config() {
   local op_item="op://${_ref_segs[0]}/${_ref_segs[1]}"
   local op_field="${_ref_stripped#${_ref_segs[0]}/${_ref_segs[1]}/}"
 
+  # This function rewrites local.env from scratch, so carry over any keys it
+  # doesn't manage — feature-flag opt-ins such as
+  # CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS or ENABLE_TOOL_SEARCH, and model pins.
+  # Without this, re-running the installer silently reverts a dev's settings.
+  local preserved=""
+  if [[ -f "$LOCAL_ENV" ]]; then
+    preserved=$(grep -vE '^(#|[[:space:]]*$|LITELLM_BASE_URL=|OP_ITEM=|OP_FIELD=)' "$LOCAL_ENV" || true)
+  fi
+
   umask 077
   cat > "$LOCAL_ENV" <<EOF
 # Local overrides — User-specific settings
@@ -176,6 +185,10 @@ LITELLM_BASE_URL="$litellm_url"
 OP_ITEM="$op_item"
 OP_FIELD="$op_field"
 EOF
+  if [[ -n "$preserved" ]]; then
+    printf '%s\n' "$preserved" >> "$LOCAL_ENV"
+    info "Preserved $(printf '%s\n' "$preserved" | grep -c .) existing override(s) in $LOCAL_ENV"
+  fi
   ok "Wrote $LOCAL_ENV"
 }
 
