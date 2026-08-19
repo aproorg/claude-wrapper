@@ -226,6 +226,16 @@ export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS="${CLAUDE_CODE_DISABLE_EXPERIMENTA
 export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS="${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-1}"
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="${CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:-1}"
 
+# Deferred MCP tool loading ("tool search") — the reason the beta flag above is
+# overridable. Claude Code disables it whenever ANTHROPIC_BASE_URL isn't a
+# first-party Anthropic host, so the gateway needs an explicit opt-in; it also
+# rides on the advanced-tool-use beta, so both must be set. Values: true, auto,
+# auto:N. Exported explicitly because local.env is sourced without `set -a` — a
+# bare assignment there would set a shell variable the exec'd binary never sees.
+# Don't pin haiku for subagents with this on: Bedrock's haiku-4-5 rejects
+# tools[].custom.defer_loading with a 400.
+[[ -n "${ENABLE_TOOL_SEARCH:-}" ]] && export ENABLE_TOOL_SEARCH
+
 # Get API key
 if API_KEY=$(get_api_key "$CLAUDE_PROJECT"); then
   export ANTHROPIC_AUTH_TOKEN="$API_KEY"

@@ -104,6 +104,20 @@ if (Test-Path $_LocalEnvPath) {
                 "OP_ACCOUNT"       { $OP_Account = $Matches[2] }
             }
         }
+        # Any other assignment becomes a process environment variable, matching
+        # the Unix wrapper's `source local.env`. This is what lets a dev set
+        # feature flags such as CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS or
+        # ENABLE_TOOL_SEARCH here; the flag defaults below only fill in what
+        # local.env left unset. Quotes around the value are optional.
+        elseif ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
+            $_k = $Matches[1]
+            $_v = $Matches[2].Trim()
+            if ($_v.Length -ge 2 -and $_v.StartsWith('"') -and $_v.EndsWith('"')) {
+                $_v = $_v.Substring(1, $_v.Length - 2)
+            }
+            [Environment]::SetEnvironmentVariable($_k, $_v)
+            Remove-Variable _k, _v -ErrorAction SilentlyContinue
+        }
     }
 }
 Remove-Variable _LocalEnvPath -ErrorAction SilentlyContinue
@@ -282,12 +296,19 @@ $Project = Get-ClaudeProject
 $env:ANTHROPIC_BASE_URL = $LiteLLM_BaseURL
 $env:ANTHROPIC_MODEL = if ($env:CLAUDE_MODEL) { $env:CLAUDE_MODEL } else { $Model_Opus }
 $env:ANTHROPIC_SMALL_FAST_MODEL = $Model_Haiku
-$env:CLAUDE_CODE_SUBAGENT_MODEL = $Model_Haiku
 
-# Feature flags
-$env:CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "1"
-$env:CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"
-$env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"
+# CLAUDE_CODE_SUBAGENT_MODEL is a hard override, not a default: setting it
+# discards the model each Agent call passes and the model an agent definition
+# declares. Left unset, that precedence applies. Pin it in local.env if wanted.
+
+# Feature flags. Each is a default, not a pin: a value already set in the
+# environment or in local.env wins, so a per-dev override survives every launch.
+if (-not $env:CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS) { $env:CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "1" }
+if (-not $env:CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS) { $env:CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1" }
+if (-not $env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC) { $env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1" }
+
+# ENABLE_TOOL_SEARCH needs no default — it is off unless a dev sets it in
+# local.env, which the parser above already promoted to the environment.
 
 # API key
 $apiKey = Get-ApiKey -Project $Project

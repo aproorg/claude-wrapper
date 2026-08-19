@@ -260,6 +260,7 @@ To suppress the header on a specific project (rare — e.g., experimental scratc
 | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | `1` | Enable the agent-teams feature. |
 | `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | `1` | Suppress requests that aren't part of the session itself. |
 | `CLAUDE_CODE_SUBAGENT_MODEL` | (unset) | Pin the model for all subagents. Left unset, a subagent uses the model its spawner requested, then its own definition's `model`, then the parent's. |
+| `ENABLE_TOOL_SEARCH` | (unset) | Send MCP tool schemas on demand instead of inline. Accepts `true`, `auto`, or `auto:N`. Requires `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=0` — see [Deferred MCP tool loading](#deferred-mcp-tool-loading) below. |
 
 **Files:**
 
@@ -286,6 +287,26 @@ curl -fsSL https://raw.githubusercontent.com/aproorg/claude-wrapper/main/install
 ```
 
 The file uses simple `KEY="VALUE"` format and has `0600` permissions.
+
+</details>
+
+<details>
+<summary id="deferred-mcp-tool-loading">Deferred MCP tool loading (tool search)</summary>
+
+Claude Code can send MCP tool *names* up front and fetch individual schemas on demand via a `ToolSearch` tool, instead of inlining every schema in every request. It enables this automatically only when `ANTHROPIC_BASE_URL` is a first-party Anthropic host — sessions through the LiteLLM gateway fail that check, so it must be opted into explicitly.
+
+The saving is large. Measured on this wrapper with four MCP servers connected, tool schemas were 86% of a trivial request's payload (~44K tokens); per-turn prompt tokens across a real session went from ~68,900 to ~20,700.
+
+**Opt in** with both lines in `local.env` (`~/.config/claude/local.env`, or `%APPDATA%\claude\local.env`):
+
+```
+CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=0
+ENABLE_TOOL_SEARCH=true
+```
+
+Both are required: tool search rides on the `advanced-tool-use-2025-11-20` beta, which the default suppression strips, so `ENABLE_TOOL_SEARCH` alone does nothing. Lifting the suppression also re-enables the other experimental betas — there is no per-beta switch. Besides `true`, the flag accepts `auto` and `auto:N`.
+
+Verified against `litellm.ai.apro.is` on Bedrock: prompt-cache reads stayed monotonic with zero misses, `tool_reference` blocks round-tripped, and MCP tools resolved on demand. Works on `opus-4-7`/`opus-4-8`/`opus-5` and `sonnet-4-6`/`sonnet-5`. **`haiku-4-5` rejects** `tools[].custom.defer_loading` with HTTP 400 — so don't combine this with `CLAUDE_CODE_SUBAGENT_MODEL` pinned to haiku, or every subagent turn fails.
 
 </details>
 
