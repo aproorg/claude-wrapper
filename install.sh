@@ -170,7 +170,8 @@ prompt_local_config() {
 
   # This function rewrites local.env from scratch, so carry over any keys it
   # doesn't manage — feature-flag opt-ins such as
-  # CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS or ENABLE_TOOL_SEARCH, and model pins.
+  # CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS, and model pins such as
+  # CLAUDE_CODE_SUBAGENT_MODEL.
   # Without this, re-running the installer silently reverts a dev's settings.
   local preserved=""
   if [[ -f "$LOCAL_ENV" ]]; then

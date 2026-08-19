@@ -226,12 +226,6 @@ export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS="${CLAUDE_CODE_DISABLE_EXPERIMENTA
 export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS="${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-1}"
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="${CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:-1}"
 
-# Deferred MCP tool loading ("tool search") — off by default because it needs the
-# experimental-beta suppression above lifted. See README → "Deferred MCP tool
-# loading". Do not pin haiku for subagents with this on: Bedrock's haiku-4-5
-# rejects tools[].custom.defer_loading.
-[[ -n "${ENABLE_TOOL_SEARCH:-}" ]] && export ENABLE_TOOL_SEARCH
-
 # Get API key
 if API_KEY=$(get_api_key "$CLAUDE_PROJECT"); then
   export ANTHROPIC_AUTH_TOKEN="$API_KEY"
