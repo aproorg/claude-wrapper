@@ -38,7 +38,6 @@ unset _op_stripped _op_segs
 
 # Models
 CLAUDE_MODEL_OPUS="claude-opus-4-6"
-CLAUDE_MODEL_SONNET="sonnet"
 CLAUDE_MODEL_HAIKU="haiku"
 
 # ============================================================================

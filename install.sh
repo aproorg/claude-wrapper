@@ -175,7 +175,7 @@ prompt_local_config() {
   # Without this, re-running the installer silently reverts a dev's settings.
   local preserved=""
   if [[ -f "$LOCAL_ENV" ]]; then
-    preserved=$(grep -vE '^(#|[[:space:]]*$|LITELLM_BASE_URL=|OP_ITEM=|OP_FIELD=)' "$LOCAL_ENV" || true)
+    preserved=$(grep -vE '^([[:space:]]*(#|$)|LITELLM_BASE_URL=|OP_ITEM=|OP_FIELD=)' "$LOCAL_ENV" || true)
   fi
 
   umask 077
