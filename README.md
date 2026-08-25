@@ -252,7 +252,7 @@ To suppress the header on a specific project (rare — e.g., experimental scratc
 |----------|---------|-------------|
 | `CLAUDE_ENV_URL` | (this repo) | Override remote config URL |
 | `CLAUDE_ENV_UPDATE_TTL` | `300` | Cache TTL in seconds |
-| `CLAUDE_MODEL` | `claude-opus-4-6` | Override default model |
+| `CLAUDE_MODEL` | `claude-opus-5` | Override default model |
 | `CLAUDE_PROJECT` | (auto-detected) | Override project name |
 | `CLAUDE_DEBUG` | `0` | Enable debug output |
 | `ANTHROPIC_CUSTOM_HEADERS` | (auto-set) | Auto-injected `x-github-repo: $CLAUDE_PROJECT`. Pre-existing values preserved (header appended on new line). |

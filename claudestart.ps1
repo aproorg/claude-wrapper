@@ -15,7 +15,7 @@ $OP_Item = "op://Employee/ai.apro.is litellm"
 # Overridable via OP_FIELD in local.env for users with non-standard field names.
 $OP_Field = "API Key"
 
-$Model_Opus = "claude-opus-4-6"
+$Model_Opus = "claude-opus-5"
 $Model_Haiku = "haiku"
 
 $CacheTTL_Seconds = 43200  # 12 hours for API keys

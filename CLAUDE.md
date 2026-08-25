@@ -53,7 +53,7 @@ No build step, no tests, no package.json — all scripts run directly.
 |----------|---------|---------|
 | `CLAUDE_ENV_URL` | (this repo's raw URL) | Override remote config source (also propagates from installer to installed wrapper) |
 | `CLAUDE_ENV_UPDATE_TTL` | `300` | Cache TTL in seconds for remote config |
-| `CLAUDE_MODEL` | `claude-opus-4-6` | Override default model |
+| `CLAUDE_MODEL` | `claude-opus-5` | Override default model |
 | `CLAUDE_PROJECT` | (auto from git remote, simple repo name) | Override project name for key lookup and 1P field name. Sanitized — no slashes (used as a filename and 1P path component). |
 | `CLAUDE_GITHUB_REPO` | (auto from git remote, `org/repo`) | Override the org/repo value used for the `x-github-repo` header. Slashes are intentional (it's a header value). |
 | `CLAUDE_DEBUG` | `0` | Show resolved config on launch |
