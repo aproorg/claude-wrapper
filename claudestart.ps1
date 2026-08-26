@@ -15,8 +15,7 @@ $OP_Item = "op://Employee/ai.apro.is litellm"
 # Overridable via OP_FIELD in local.env for users with non-standard field names.
 $OP_Field = "API Key"
 
-$Model_Opus = "claude-opus-4-6"
-$Model_Sonnet = "sonnet"
+$Model_Opus = "claude-opus-5"
 $Model_Haiku = "haiku"
 
 $CacheTTL_Seconds = 43200  # 12 hours for API keys
@@ -96,13 +95,29 @@ Remove-Variable _RemoteUrl, _RemoteCache, _NeedsFetch, _Age, _tmp, _content, _St
 $_LocalEnvPath = "$env:APPDATA\claude\local.env"
 if (Test-Path $_LocalEnvPath) {
     foreach ($line in Get-Content $_LocalEnvPath) {
-        if ($line -match '^(LITELLM_BASE_URL|OP_ITEM|OP_FIELD|OP_ACCOUNT)="(.*)"') {
+        if ($line -match '^\s*(?:export\s+)?(LITELLM_BASE_URL|OP_ITEM|OP_FIELD|OP_ACCOUNT)="(.*)"') {
             switch ($Matches[1]) {
                 "LITELLM_BASE_URL" { $LiteLLM_BaseURL = $Matches[2] }
                 "OP_ITEM"          { $OP_Item = $Matches[2] }
                 "OP_FIELD"         { $OP_Field = $Matches[2] }
                 "OP_ACCOUNT"       { $OP_Account = $Matches[2] }
             }
+        }
+        # Any other assignment becomes a process environment variable, matching
+        # the Unix wrapper's `source local.env`. This is what lets a dev set
+        # feature flags such as CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS or
+        # ENABLE_TOOL_SEARCH here; the flag defaults below only fill in what
+        # local.env left unset. Quotes around the value are optional, as is a
+        # leading `export` — `source` accepts it on Unix, so a local.env copied
+        # between platforms must parse the same on both.
+        elseif ($line -match '^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
+            $_k = $Matches[1]
+            $_v = $Matches[2].Trim()
+            if ($_v.Length -ge 2 -and $_v.StartsWith('"') -and $_v.EndsWith('"')) {
+                $_v = $_v.Substring(1, $_v.Length - 2)
+            }
+            [Environment]::SetEnvironmentVariable($_k, $_v)
+            Remove-Variable _k, _v -ErrorAction SilentlyContinue
         }
     }
 }
@@ -282,12 +297,19 @@ $Project = Get-ClaudeProject
 $env:ANTHROPIC_BASE_URL = $LiteLLM_BaseURL
 $env:ANTHROPIC_MODEL = if ($env:CLAUDE_MODEL) { $env:CLAUDE_MODEL } else { $Model_Opus }
 $env:ANTHROPIC_SMALL_FAST_MODEL = $Model_Haiku
-$env:CLAUDE_CODE_SUBAGENT_MODEL = $Model_Haiku
 
-# Feature flags
-$env:CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "1"
-$env:CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"
-$env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"
+# CLAUDE_CODE_SUBAGENT_MODEL is a hard override, not a default: setting it
+# discards the model each Agent call passes and the model an agent definition
+# declares. Left unset, that precedence applies. Pin it in local.env if wanted.
+
+# Feature flags. Each is a default, not a pin: a value already set in the
+# environment or in local.env wins, so a per-dev override survives every launch.
+if (-not $env:CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS) { $env:CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "1" }
+if (-not $env:CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS) { $env:CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1" }
+if (-not $env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC) { $env:CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1" }
+
+# ENABLE_TOOL_SEARCH needs no default — it is off unless a dev sets it in
+# local.env, which the parser above already promoted to the environment.
 
 # API key
 $apiKey = Get-ApiKey -Project $Project

@@ -53,10 +53,13 @@ No build step, no tests, no package.json — all scripts run directly.
 |----------|---------|---------|
 | `CLAUDE_ENV_URL` | (this repo's raw URL) | Override remote config source (also propagates from installer to installed wrapper) |
 | `CLAUDE_ENV_UPDATE_TTL` | `300` | Cache TTL in seconds for remote config |
-| `CLAUDE_MODEL` | `claude-opus-4-6` | Override default model |
+| `CLAUDE_MODEL` | `claude-opus-5` | Override default model |
 | `CLAUDE_PROJECT` | (auto from git remote, simple repo name) | Override project name for key lookup and 1P field name. Sanitized — no slashes (used as a filename and 1P path component). |
 | `CLAUDE_GITHUB_REPO` | (auto from git remote, `org/repo`) | Override the org/repo value used for the `x-github-repo` header. Slashes are intentional (it's a header value). |
 | `CLAUDE_DEBUG` | `0` | Show resolved config on launch |
+| `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS` | `1` | Suppress experimental betas. Overridable per dev — set `0` in `local.env` to lift it (prerequisite for `ENABLE_TOOL_SEARCH`). |
+| `ENABLE_TOOL_SEARCH` | (unset) | Defer MCP tool schemas behind a `ToolSearch` tool (`true` \| `auto` \| `auto:N`). Needed because the gateway isn't a first-party host, and requires the beta suppression lifted. |
+| `CLAUDE_CODE_SUBAGENT_MODEL` | (unset) | Pin all subagents to one model. Unset by default so per-spawn and agent-frontmatter choices apply. |
 | `CLAUDE_FORCE` | `0` | Installer: overwrite existing wrapper without backup |
 | `ANTHROPIC_CUSTOM_HEADERS` | (auto-set) | Auto-injected `x-github-repo: ${CLAUDE_GITHUB_REPO}` (full org/repo) for LiteLLM per-repo attribution; falls back to `CLAUDE_PROJECT` when no remote is set. Pre-existing values are preserved (header appended on a new line). |
 

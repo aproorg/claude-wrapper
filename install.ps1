@@ -152,6 +152,18 @@ function Prompt-LocalConfig {
     $opItem = "op://$($refSegs[0])/$($refSegs[1])"
     $opField = ($refSegs | Select-Object -Skip 2) -join '/'
 
+    # This function rewrites local.env from scratch, so carry over any keys it
+    # doesn't manage — feature-flag opt-ins such as
+    # CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS and ENABLE_TOOL_SEARCH, and model
+    # pins such as CLAUDE_CODE_SUBAGENT_MODEL.
+    # Without this, re-running the installer silently reverts a dev's settings.
+    $preserved = @()
+    if (Test-Path $LocalEnv) {
+        $preserved = @(Get-Content $LocalEnv | Where-Object {
+            $_ -notmatch '^\s*(#|$)' -and $_ -notmatch '^(LITELLM_BASE_URL|OP_ITEM|OP_FIELD)='
+        })
+    }
+
     $content = @"
 # Local overrides — User-specific settings
 # Written by install.ps1, sourced by claudestart.ps1
@@ -159,7 +171,13 @@ LITELLM_BASE_URL="$litellmUrl"
 OP_ITEM="$opItem"
 OP_FIELD="$opField"
 "@
+    if ($preserved.Count -gt 0) {
+        $content = $content + "`n" + ($preserved -join "`n")
+    }
     Set-Content -Path $LocalEnv -Value $content -Encoding UTF8
+    if ($preserved.Count -gt 0) {
+        Write-Info "Preserved $($preserved.Count) existing override(s) in $LocalEnv"
+    }
     Write-Ok "Wrote $LocalEnv"
 }
 
