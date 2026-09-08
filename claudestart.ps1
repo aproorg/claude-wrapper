@@ -16,7 +16,7 @@ $OP_Item = "op://Employee/ai.apro.is litellm"
 $OP_Field = "API Key"
 
 $Model_Opus = "claude-opus-5"
-$Model_Haiku = "haiku"
+$Model_Haiku = "claude-haiku-4-5"
 
 $CacheTTL_Seconds = 43200  # 12 hours for API keys
 $ConfigTTL_Seconds = 300   # 5 minutes for remote config

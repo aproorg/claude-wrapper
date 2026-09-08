@@ -38,7 +38,7 @@ unset _op_stripped _op_segs
 
 # Models
 CLAUDE_MODEL_OPUS="claude-opus-5"
-CLAUDE_MODEL_HAIKU="haiku"
+CLAUDE_MODEL_HAIKU="claude-haiku-4-5"
 
 # ============================================================================
 # Project Detection
