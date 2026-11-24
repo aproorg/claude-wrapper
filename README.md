@@ -61,10 +61,11 @@ This repo ships with defaults for the maintainers' infrastructure. To use it for
 
 Individual developers can also override any value via `~/.config/claude/local.env` without touching the shared config.
 
-To switch 1Password account for a single launch, pass `--op-account` (on Windows: `claudestart --op-account ...`):
+To switch 1Password account, item or field for a single launch, pass the `--op-*` flags (on Windows: `claudestart --op-account ...`):
 
 ```bash
 claude --op-account yourorg.1password.com
+claude --op-item "op://YourVault/Your item" --op-field "API Key"
 ```
 
 ## Troubleshooting
