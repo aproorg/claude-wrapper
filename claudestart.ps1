@@ -123,6 +123,33 @@ if (Test-Path $_LocalEnvPath) {
 }
 Remove-Variable _LocalEnvPath -ErrorAction SilentlyContinue
 
+# ── --op-account flag ───────────────────────────────────────────────────────
+# `--op-account <domain>` / `--op-account=<domain>` (or a CLAUDE_OP_ACCOUNT env
+# var) picks the 1Password account for this launch and wins over local.env.
+# The flag is stripped so the real claude never sees it.
+$_OpAccountOverride = $env:CLAUDE_OP_ACCOUNT
+$_PassArgs = @()
+for ($_i = 0; $_i -lt $args.Count; $_i++) {
+    $_a = [string]$args[$_i]
+    if ($_a -ceq '--') {
+        $_PassArgs += $args[$_i..($args.Count - 1)]
+        break
+    } elseif ($_a -ceq '--op-account') {
+        if ($_i + 1 -ge $args.Count) {
+            [Console]::Error.WriteLine("ERROR: --op-account requires a value")
+            exit 1
+        }
+        $_i++
+        $_OpAccountOverride = [string]$args[$_i]
+    } elseif ($_a.StartsWith('--op-account=')) {
+        $_OpAccountOverride = $_a.Substring('--op-account='.Length)
+    } else {
+        $_PassArgs += $args[$_i]
+    }
+}
+if ($_OpAccountOverride) { $OP_Account = $_OpAccountOverride }
+Remove-Variable _i, _a -ErrorAction SilentlyContinue
+
 # Defensive migration: legacy local.env files set OP_ITEM with the field baked
 # into the path (e.g. op://V/Item/API Key). Post-#13, OP_FIELD is separate and
 # the wrapper appends it itself, so a legacy 3+ segment OP_ITEM would yield
@@ -225,6 +252,12 @@ function Get-ApiKey {
     param([string]$Project)
 
     $cacheFile = Join-Path $CacheDir "$Project.key"
+    # An account override gets its own cache file, otherwise a key cached from
+    # the default account would be served for up to 12h and the flag would
+    # silently do nothing.
+    if ($_OpAccountOverride) {
+        $cacheFile = Join-Path $CacheDir "$Project.$(Sanitize-Name $_OpAccountOverride).key"
+    }
 
     # Check cache (file must exist and be non-empty)
     if ((Test-Path $cacheFile) -and (Get-Item $cacheFile).Length -gt 0) {
@@ -340,5 +373,5 @@ if ($env:CLAUDE_DEBUG -eq "1") {
     [Console]::Error.WriteLine("Claude: project=$Project base=$LiteLLM_BaseURL model=$($env:ANTHROPIC_MODEL) headers=$($env:ANTHROPIC_CUSTOM_HEADERS)")
 }
 
-# Launch Claude Code (pass through any arguments)
-& claude @args
+# Launch Claude Code (pass through any arguments, minus --op-account)
+& claude @_PassArgs

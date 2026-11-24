@@ -39,6 +39,7 @@ Config override chain: `claude-env.sh` defaults → `local.env` overrides → en
 | `irm .../install.ps1 \| iex` | Install wrapper (Windows) |
 | `CLAUDE_DEBUG=1 claude` | Launch with debug output showing resolved config |
 | `claude --clear-cache` | Clear all cached API keys + remote config |
+| `claude --op-account <domain>` | Use another 1Password account for this launch (also `--op-account=<domain>` or `CLAUDE_OP_ACCOUNT`). Stripped before the real binary runs; keys are cached per account. |
 | `rm ~/.cache/claude/env-remote.sh` | Force re-fetch of just the remote config |
 
 No build step, no tests, no package.json — all scripts run directly.
@@ -87,7 +88,7 @@ No build step, no tests, no package.json — all scripts run directly.
 - **Wrapper self-skip** — `claude` wrapper iterates PATH and compares `realpath` to skip itself when finding the real binary. Breaks if the real claude isn't on PATH.
 - **`claude-env.sh` is sourced, not executed** — Runs in the wrapper's shell context. Variables must be exported explicitly. `return` works (not `exit`).
 - **Middleware is wrapper-only** — `~/.config/claude/middleware.sh` is sourced by the `claude` wrapper. Windows has no equivalent — header opt-out / provider switching must be done via env vars or by editing `claudestart.ps1` directly.
-- **1Password `op` account** — Hardcoded to `aproorg.1password.eu` in `claude-env.sh` and `claudestart.ps1`. Not overridable via local.env.
+- **1Password `op` account** — Defaults to `aproorg.1password.eu` in `claude-env.sh` and `claudestart.ps1`. Override chain: default → `OP_ACCOUNT` in local.env → `CLAUDE_OP_ACCOUNT` env var → `--op-account` flag. A plain `OP_ACCOUNT` shell env var is ignored (the default is assigned unconditionally).
 - **Branch testing** — Both installers derive their base URL from `CLAUDE_ENV_URL`. Setting it before invocation makes the installer fetch *all* sibling files (wrapper, ps1, claude-env.sh) from that branch's raw URL, and patches the installed wrapper so it keeps fetching from that branch on every launch.
 
 ## Active Technologies

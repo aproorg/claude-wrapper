@@ -61,6 +61,12 @@ This repo ships with defaults for the maintainers' infrastructure. To use it for
 
 Individual developers can also override any value via `~/.config/claude/local.env` without touching the shared config.
 
+To switch 1Password account for a single launch, pass `--op-account` (on Windows: `claudestart --op-account ...`):
+
+```bash
+claude --op-account yourorg.1password.com
+```
+
 ## Troubleshooting
 
 ```bash

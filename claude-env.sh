@@ -23,6 +23,10 @@ if [[ -f "$_CLAUDE_LOCAL_ENV" ]]; then
 fi
 unset _CLAUDE_LOCAL_ENV
 
+# The wrapper's --op-account flag (or a CLAUDE_OP_ACCOUNT env var) wins over
+# both the default above and local.env.
+OP_ACCOUNT="${CLAUDE_OP_ACCOUNT:-$OP_ACCOUNT}"
+
 # Defensive migration: legacy local.env files set OP_ITEM with the field baked
 # into the path (e.g. op://V/Item/API Key). Post-#13, OP_FIELD is separate and
 # the wrapper appends it itself, so a legacy 3+ segment OP_ITEM would yield
@@ -104,6 +108,12 @@ get_api_key() {
   local project="$1"
   local cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/claude"
   local cache_file="$cache_dir/${project}.key"
+  # An account override gets its own cache file, otherwise a key cached from
+  # the default account would be served for up to 12h and the flag would
+  # silently do nothing.
+  if [[ -n "${CLAUDE_OP_ACCOUNT:-}" ]]; then
+    cache_file="$cache_dir/${project}.${CLAUDE_OP_ACCOUNT//[^A-Za-z0-9._-]/_}.key"
+  fi
   local cache_ttl=43200 # 12 hours
 
   # Create cache dir with restrictive permissions from the start
