@@ -23,6 +23,12 @@ if [[ -f "$_CLAUDE_LOCAL_ENV" ]]; then
 fi
 unset _CLAUDE_LOCAL_ENV
 
+# The wrapper's --op-account / --op-item flags (or CLAUDE_OP_* env vars) win
+# over both the defaults above and local.env. --op-field is applied after the
+# legacy split below so an explicit field always wins.
+OP_ACCOUNT="${CLAUDE_OP_ACCOUNT:-$OP_ACCOUNT}"
+OP_ITEM="${CLAUDE_OP_ITEM:-$OP_ITEM}"
+
 # Defensive migration: legacy local.env files set OP_ITEM with the field baked
 # into the path (e.g. op://V/Item/API Key). Post-#13, OP_FIELD is separate and
 # the wrapper appends it itself, so a legacy 3+ segment OP_ITEM would yield
@@ -35,6 +41,7 @@ if (( ${#_op_segs[@]} > 2 )); then
   OP_FIELD="${_op_stripped#${_op_segs[0]}/${_op_segs[1]}/}"
 fi
 unset _op_stripped _op_segs
+OP_FIELD="${CLAUDE_OP_FIELD:-$OP_FIELD}"
 
 # Models
 CLAUDE_MODEL_OPUS="claude-opus-5"
@@ -104,6 +111,13 @@ get_api_key() {
   local project="$1"
   local cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/claude"
   local cache_file="$cache_dir/${project}.key"
+  # Each account/item/field override gets its own cache file, otherwise a key
+  # cached from the defaults would be served for up to 12h and the flags
+  # would silently do nothing.
+  local override="${CLAUDE_OP_ACCOUNT:-}|${CLAUDE_OP_ITEM:-}|${CLAUDE_OP_FIELD:-}"
+  if [[ "$override" != "||" ]]; then
+    cache_file="$cache_dir/${project}.${override//[^A-Za-z0-9._-]/_}.key"
+  fi
   local cache_ttl=43200 # 12 hours
 
   # Create cache dir with restrictive permissions from the start

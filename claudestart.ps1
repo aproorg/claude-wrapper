@@ -123,6 +123,41 @@ if (Test-Path $_LocalEnvPath) {
 }
 Remove-Variable _LocalEnvPath -ErrorAction SilentlyContinue
 
+# ── --op-account / --op-item / --op-field flags ─────────────────────────────
+# Pick the 1Password account, item (op://Vault/Item) or fallback field for this
+# launch, as `--flag <value>` or `--flag=<value>` (or CLAUDE_OP_* env vars).
+# They win over local.env and are stripped so the real claude never sees them.
+$_OpOverride = @{
+    account = $env:CLAUDE_OP_ACCOUNT
+    item    = $env:CLAUDE_OP_ITEM
+    field   = $env:CLAUDE_OP_FIELD
+}
+$_PassArgs = @()
+for ($_i = 0; $_i -lt $args.Count; $_i++) {
+    $_a = [string]$args[$_i]
+    if ($_a -ceq '--') {
+        $_PassArgs += $args[$_i..($args.Count - 1)]
+        break
+    } elseif ($_a -cmatch '(?s)^--op-(account|item|field)(=(.*))?$') {
+        $_name = $Matches[1]
+        if ($Matches.ContainsKey(2)) {
+            $_OpOverride[$_name] = $Matches[3]
+        } else {
+            if ($_i + 1 -ge $args.Count) {
+                [Console]::Error.WriteLine("ERROR: $_a requires a value")
+                exit 1
+            }
+            $_i++
+            $_OpOverride[$_name] = [string]$args[$_i]
+        }
+    } else {
+        $_PassArgs += $args[$_i]
+    }
+}
+if ($_OpOverride.account) { $OP_Account = $_OpOverride.account }
+if ($_OpOverride.item)    { $OP_Item = $_OpOverride.item }
+Remove-Variable _i, _a, _name -ErrorAction SilentlyContinue
+
 # Defensive migration: legacy local.env files set OP_ITEM with the field baked
 # into the path (e.g. op://V/Item/API Key). Post-#13, OP_FIELD is separate and
 # the wrapper appends it itself, so a legacy 3+ segment OP_ITEM would yield
@@ -137,6 +172,8 @@ if ($OP_Item) {
     }
     Remove-Variable _opStripped, _opSegs -ErrorAction SilentlyContinue
 }
+# Applied after the legacy split so an explicit --op-field always wins.
+if ($_OpOverride.field) { $OP_Field = $_OpOverride.field }
 
 # ============================================================================
 # Project Detection
@@ -225,6 +262,13 @@ function Get-ApiKey {
     param([string]$Project)
 
     $cacheFile = Join-Path $CacheDir "$Project.key"
+    # Each account/item/field override gets its own cache file, otherwise a key
+    # cached from the defaults would be served for up to 12h and the flags
+    # would silently do nothing.
+    $override = "$($_OpOverride.account)|$($_OpOverride.item)|$($_OpOverride.field)"
+    if ($override -ne '||') {
+        $cacheFile = Join-Path $CacheDir "$Project.$($override -replace '[^a-zA-Z0-9_.\-]', '_').key"
+    }
 
     # Check cache (file must exist and be non-empty)
     if ((Test-Path $cacheFile) -and (Get-Item $cacheFile).Length -gt 0) {
@@ -340,5 +384,5 @@ if ($env:CLAUDE_DEBUG -eq "1") {
     [Console]::Error.WriteLine("Claude: project=$Project base=$LiteLLM_BaseURL model=$($env:ANTHROPIC_MODEL) headers=$($env:ANTHROPIC_CUSTOM_HEADERS)")
 }
 
-# Launch Claude Code (pass through any arguments)
-& claude @args
+# Launch Claude Code (pass through any arguments, minus the --op-* flags)
+& claude @_PassArgs
