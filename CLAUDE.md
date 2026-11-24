@@ -9,7 +9,7 @@ A process wrapper shadows the real `claude` binary on PATH. When you launch `cla
 ```
 ~/.local/bin/claude (wrapper)
   → fetches claude-env.sh from GitHub (5-min TTL cache)
-  → saves user env vars (ANTHROPIC_*) before sourcing remote config
+  → saves user model env vars (ANTHROPIC_MODEL etc., not the base URL) before sourcing remote config
   → sources cached config (sets ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN
     via 1Password, ANTHROPIC_CUSTOM_HEADERS with auto-injected x-github-repo)
   → restores user env vars (project .env / .envrc always wins)
@@ -42,8 +42,9 @@ Config override chain: `claude-env.sh` defaults → `local.env` overrides → en
 | `claude --op-account <domain>` | Use another 1Password account for this launch (env: `CLAUDE_OP_ACCOUNT`) |
 | `claude --op-item op://<Vault>/<Item>` | Use another 1Password item for this launch (env: `CLAUDE_OP_ITEM`) |
 | `claude --op-field <name>` | Use another fallback field for this launch (env: `CLAUDE_OP_FIELD`) |
+| `claude --litellm-base-url <url>` | Use another gateway URL for this launch (env: `CLAUDE_LITELLM_BASE_URL`). A plain `LITELLM_BASE_URL` or `ANTHROPIC_BASE_URL` shell env var is overwritten by the config. |
 
-The `--op-*` flags also accept `--flag=<value>`, are stripped before the real binary runs, and each combination of overrides gets its own key cache file.
+These flags also accept `--flag=<value>`, are stripped before the real binary runs, and each combination of overrides gets its own key cache file.
 | `rm ~/.cache/claude/env-remote.sh` | Force re-fetch of just the remote config |
 
 No build step, no tests, no package.json — all scripts run directly.

@@ -123,14 +123,16 @@ if (Test-Path $_LocalEnvPath) {
 }
 Remove-Variable _LocalEnvPath -ErrorAction SilentlyContinue
 
-# ── --op-account / --op-item / --op-field flags ─────────────────────────────
-# Pick the 1Password account, item (op://Vault/Item) or fallback field for this
-# launch, as `--flag <value>` or `--flag=<value>` (or CLAUDE_OP_* env vars).
+# ── --op-account / --op-item / --op-field / --litellm-base-url flags ────────
+# Pick the 1Password account, item (op://Vault/Item), fallback field or gateway
+# URL for this launch, as `--flag <value>` or `--flag=<value>` (or the
+# CLAUDE_OP_* / CLAUDE_LITELLM_BASE_URL env vars).
 # They win over local.env and are stripped so the real claude never sees them.
 $_OpOverride = @{
     account = $env:CLAUDE_OP_ACCOUNT
     item    = $env:CLAUDE_OP_ITEM
     field   = $env:CLAUDE_OP_FIELD
+    url     = $env:CLAUDE_LITELLM_BASE_URL
 }
 $_PassArgs = @()
 for ($_i = 0; $_i -lt $args.Count; $_i++) {
@@ -138,10 +140,11 @@ for ($_i = 0; $_i -lt $args.Count; $_i++) {
     if ($_a -ceq '--') {
         $_PassArgs += $args[$_i..($args.Count - 1)]
         break
-    } elseif ($_a -cmatch '(?s)^--op-(account|item|field)(=(.*))?$') {
+    } elseif ($_a -cmatch '(?s)^--(?:op-(account|item|field)|litellm-base-(url))(=(.*))?$') {
         $_name = $Matches[1]
-        if ($Matches.ContainsKey(2)) {
-            $_OpOverride[$_name] = $Matches[3]
+        if (-not $_name) { $_name = $Matches[2] }
+        if ($Matches.ContainsKey(3)) {
+            $_OpOverride[$_name] = $Matches[4]
         } else {
             if ($_i + 1 -ge $args.Count) {
                 [Console]::Error.WriteLine("ERROR: $_a requires a value")
@@ -156,6 +159,7 @@ for ($_i = 0; $_i -lt $args.Count; $_i++) {
 }
 if ($_OpOverride.account) { $OP_Account = $_OpOverride.account }
 if ($_OpOverride.item)    { $OP_Item = $_OpOverride.item }
+if ($_OpOverride.url)     { $LiteLLM_BaseURL = $_OpOverride.url }
 Remove-Variable _i, _a, _name -ErrorAction SilentlyContinue
 
 # Defensive migration: legacy local.env files set OP_ITEM with the field baked
@@ -262,11 +266,12 @@ function Get-ApiKey {
     param([string]$Project)
 
     $cacheFile = Join-Path $CacheDir "$Project.key"
-    # Each account/item/field override gets its own cache file, otherwise a key
-    # cached from the defaults would be served for up to 12h and the flags
-    # would silently do nothing.
-    $override = "$($_OpOverride.account)|$($_OpOverride.item)|$($_OpOverride.field)"
-    if ($override -ne '||') {
+    # Each account/item/field/gateway override gets its own cache file,
+    # otherwise a key cached from the defaults would be served for up to 12h:
+    # the --op-* flags would silently do nothing, and --litellm-base-url would
+    # send the default gateway's key to another host.
+    $override = "$($_OpOverride.account)|$($_OpOverride.item)|$($_OpOverride.field)|$($_OpOverride.url)"
+    if ($override -ne '|||') {
         $cacheFile = Join-Path $CacheDir "$Project.$($override -replace '[^a-zA-Z0-9_.\-]', '_').key"
     }
 
@@ -384,5 +389,5 @@ if ($env:CLAUDE_DEBUG -eq "1") {
     [Console]::Error.WriteLine("Claude: project=$Project base=$LiteLLM_BaseURL model=$($env:ANTHROPIC_MODEL) headers=$($env:ANTHROPIC_CUSTOM_HEADERS)")
 }
 
-# Launch Claude Code (pass through any arguments, minus the --op-* flags)
+# Launch Claude Code (pass through any arguments, minus the wrapper's own flags)
 & claude @_PassArgs

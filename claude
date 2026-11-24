@@ -40,19 +40,19 @@ CLAUDE_BIN="$(_find_real_claude)" || {
   exit 1
 }
 
-# ── Handle --op-account / --op-item / --op-field ────────────────────────────
-# Pick the 1Password account, item (op://Vault/Item) or fallback field for this
-# launch, as `--flag <value>` or `--flag=<value>`. Stripped here so the real
+# ── Handle --op-account / --op-item / --op-field / --litellm-base-url ───────
+# Pick the 1Password account, item (op://Vault/Item), fallback field or gateway
+# URL for this launch, as `--flag <value>` or `--flag=<value>`. Stripped here so the real
 # binary never sees them; claude-env.sh reads the CLAUDE_OP_* variables (env
 # vars of the same names work without the flags).
 _args=()
 # shellcheck disable=SC2034  # CLAUDE_OP_* are read by the sourced claude-env.sh
 while (($#)); do
   case "$1" in
-    --op-account|--op-item|--op-field)
+    --op-account|--op-item|--op-field|--litellm-base-url)
       [[ $# -ge 2 ]] || { echo "ERROR: $1 requires a value" >&2; exit 1; }
       _flag="$1" _val="$2"; shift 2 ;;
-    --op-account=*|--op-item=*|--op-field=*) _flag="${1%%=*}" _val="${1#*=}"; shift ;;
+    --op-account=*|--op-item=*|--op-field=*|--litellm-base-url=*) _flag="${1%%=*}" _val="${1#*=}"; shift ;;
     --) _args+=("$@"); break ;;
     *) _args+=("$1"); shift; continue ;;
   esac
@@ -60,6 +60,7 @@ while (($#)); do
     --op-account) CLAUDE_OP_ACCOUNT="$_val" ;;
     --op-item)    CLAUDE_OP_ITEM="$_val" ;;
     --op-field)   CLAUDE_OP_FIELD="$_val" ;;
+    --litellm-base-url) CLAUDE_LITELLM_BASE_URL="$_val" ;;
   esac
 done
 # ${arr[@]+...} guards the empty array under `set -u` on bash < 4.4

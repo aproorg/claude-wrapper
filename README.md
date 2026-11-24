@@ -66,6 +66,7 @@ To switch 1Password account, item or field for a single launch, pass the `--op-*
 ```bash
 claude --op-account yourorg.1password.com
 claude --op-item "op://YourVault/Your item" --op-field "API Key"
+claude --litellm-base-url https://your-gateway.example.com
 ```
 
 ## Troubleshooting

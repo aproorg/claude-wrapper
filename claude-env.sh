@@ -28,6 +28,8 @@ unset _CLAUDE_LOCAL_ENV
 # legacy split below so an explicit field always wins.
 OP_ACCOUNT="${CLAUDE_OP_ACCOUNT:-$OP_ACCOUNT}"
 OP_ITEM="${CLAUDE_OP_ITEM:-$OP_ITEM}"
+# Same for --litellm-base-url / CLAUDE_LITELLM_BASE_URL.
+LITELLM_BASE_URL="${CLAUDE_LITELLM_BASE_URL:-$LITELLM_BASE_URL}"
 
 # Defensive migration: legacy local.env files set OP_ITEM with the field baked
 # into the path (e.g. op://V/Item/API Key). Post-#13, OP_FIELD is separate and
@@ -111,11 +113,12 @@ get_api_key() {
   local project="$1"
   local cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/claude"
   local cache_file="$cache_dir/${project}.key"
-  # Each account/item/field override gets its own cache file, otherwise a key
-  # cached from the defaults would be served for up to 12h and the flags
-  # would silently do nothing.
-  local override="${CLAUDE_OP_ACCOUNT:-}|${CLAUDE_OP_ITEM:-}|${CLAUDE_OP_FIELD:-}"
-  if [[ "$override" != "||" ]]; then
+  # Each account/item/field/gateway override gets its own cache file, otherwise
+  # a key cached from the defaults would be served for up to 12h: the --op-*
+  # flags would silently do nothing, and --litellm-base-url would send the
+  # default gateway's key to another host.
+  local override="${CLAUDE_OP_ACCOUNT:-}|${CLAUDE_OP_ITEM:-}|${CLAUDE_OP_FIELD:-}|${CLAUDE_LITELLM_BASE_URL:-}"
+  if [[ "$override" != "|||" ]]; then
     cache_file="$cache_dir/${project}.${override//[^A-Za-z0-9._-]/_}.key"
   fi
   local cache_ttl=43200 # 12 hours
